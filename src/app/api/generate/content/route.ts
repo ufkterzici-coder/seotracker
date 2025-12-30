@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateSEOContent } from '@/lib/ai/groq';
+import { generateSEOContent } from '@/lib/ai/claude';
 import { verifyAuth } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
