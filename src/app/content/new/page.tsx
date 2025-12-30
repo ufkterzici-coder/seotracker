@@ -1,0 +1,323 @@
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import Header from '@/components/layout/Header';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Textarea from '@/components/ui/Textarea';
+import Badge from '@/components/ui/Badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+
+export default function NewContentPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [scraping, setScraping] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [step, setStep] = useState(1);
+
+  // Form state
+  const [title, setTitle] = useState('');
+  const [mainKeyword, setMainKeyword] = useState('');
+  const [competitorUrls, setCompetitorUrls] = useState('');
+  const [wordCount, setWordCount] = useState(1500);
+  const [searchIntent, setSearchIntent] = useState('informational');
+
+  // Scraped content
+  const [scrapedContent, setScrapedContent] = useState<any[]>([]);
+
+  // Generated content
+  const [generatedContent, setGeneratedContent] = useState<any>(null);
+
+  const handleScrape = async () => {
+    const urls = competitorUrls.split('\n').filter((url) => url.trim());
+    if (urls.length === 0) return;
+
+    setScraping(true);
+    try {
+      const response = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls }),
+      });
+
+      const data = await response.json();
+      if (data.results) {
+        setScrapedContent(data.results);
+        setStep(2);
+      }
+    } catch (error) {
+      console.error('Scrape error:', error);
+    } finally {
+      setScraping(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const response = await fetch('/api/generate/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: title,
+          mainKeyword,
+          competitorContents: scrapedContent.map((c) => c.content),
+          wordCount,
+          searchIntent,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.result) {
+        setGeneratedContent(data.result);
+        setStep(3);
+      }
+    } catch (error) {
+      console.error('Generate error:', error);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: generatedContent?.meta?.title || title,
+          slug: generatedContent?.meta?.slug,
+          meta_title: generatedContent?.meta?.title,
+          meta_description: generatedContent?.meta?.description,
+          content: generatedContent?.content,
+          main_keyword: mainKeyword,
+          lsi_keywords: JSON.stringify(generatedContent?.lsiKeywords || []),
+          search_intent: searchIntent,
+          headings: JSON.stringify(generatedContent?.headings || {}),
+          word_count: generatedContent?.content?.split(/\s+/).length || 0,
+          competitor_urls: JSON.stringify(competitorUrls.split('\n').filter(Boolean)),
+          status: 'draft',
+        }),
+      });
+
+      const data = await response.json();
+      if (data.content) {
+        router.push(`/content/${data.content.id}`);
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <Header
+        title="Yeni İçerik"
+        subtitle="AI destekli SEO içerik oluşturucu"
+      />
+
+      <div className="p-6">
+        {/* Progress Steps */}
+        <div className="flex items-center justify-center mb-8">
+          {[1, 2, 3].map((s) => (
+            <React.Fragment key={s}>
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center font-medium transition-colors ${
+                  step >= s
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {s}
+              </div>
+              {s < 3 && (
+                <div
+                  className={`w-20 h-1 mx-2 rounded-full transition-colors ${
+                    step > s ? 'bg-emerald-600' : 'bg-slate-800'
+                  }`}
+                />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="max-w-4xl mx-auto">
+          {/* Step 1: Input */}
+          {step === 1 && (
+            <Card title="Adım 1: İçerik Bilgileri" description="Hedef konu ve rakip URL'leri girin">
+              <div className="space-y-6">
+                <Input
+                  label="Konu / Başlık"
+                  placeholder="Örn: En İyi SEO Araçları 2024"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+
+                <Input
+                  label="Ana Anahtar Kelime"
+                  placeholder="Örn: seo araçları"
+                  value={mainKeyword}
+                  onChange={(e) => setMainKeyword(e.target.value)}
+                />
+
+                <Textarea
+                  label="Rakip URL'ler (Her satıra bir URL)"
+                  placeholder="https://example.com/article1&#10;https://example.com/article2"
+                  value={competitorUrls}
+                  onChange={(e) => setCompetitorUrls(e.target.value)}
+                  rows={4}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Hedef Kelime Sayısı"
+                    type="number"
+                    value={wordCount}
+                    onChange={(e) => setWordCount(parseInt(e.target.value) || 1500)}
+                  />
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                      Arama Niyeti
+                    </label>
+                    <select
+                      value={searchIntent}
+                      onChange={(e) => setSearchIntent(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="informational">Bilgilendirici</option>
+                      <option value="transactional">İşlemsel</option>
+                      <option value="commercial">Ticari Araştırma</option>
+                      <option value="navigational">Navigasyonel</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    onClick={handleScrape}
+                    loading={scraping}
+                    disabled={!title || !mainKeyword}
+                  >
+                    Rakipleri Tara ve Devam Et
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Step 2: Scraped Content Review */}
+          {step === 2 && (
+            <Card title="Adım 2: Rakip Analizi" description="Taranan içerikleri inceleyin">
+              <div className="space-y-4">
+                {scrapedContent.length === 0 ? (
+                  <p className="text-slate-400 text-center py-8">
+                    Rakip URL girilmedi. İçerik üretimine devam edebilirsiniz.
+                  </p>
+                ) : (
+                  scrapedContent.map((content, index) => (
+                    <div key={index} className="p-4 bg-slate-800/50 rounded-lg">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-medium text-white">{content.title}</h3>
+                          <p className="text-sm text-slate-400 truncate mt-1">{content.url}</p>
+                        </div>
+                        <Badge>{content.wordCount} kelime</Badge>
+                      </div>
+                      <p className="text-sm text-slate-400 mt-3 line-clamp-3">
+                        {content.content?.substring(0, 300)}...
+                      </p>
+                    </div>
+                  ))
+                )}
+
+                <div className="flex justify-between gap-3 pt-4">
+                  <Button variant="outline" onClick={() => setStep(1)}>
+                    Geri
+                  </Button>
+                  <Button onClick={handleGenerate} loading={generating}>
+                    İçerik Oluştur
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Step 3: Generated Content */}
+          {step === 3 && generatedContent && (
+            <Card title="Adım 3: Oluşturulan İçerik" description="İçeriği inceleyin ve kaydedin">
+              <Tabs defaultValue="content">
+                <TabsList>
+                  <TabsTrigger value="content">İçerik</TabsTrigger>
+                  <TabsTrigger value="meta">Meta Bilgileri</TabsTrigger>
+                  <TabsTrigger value="keywords">Anahtar Kelimeler</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="content">
+                  <div className="prose prose-invert max-w-none">
+                    <div className="p-4 bg-slate-800/50 rounded-lg">
+                      <h1 className="text-xl font-bold text-white mb-4">
+                        {generatedContent.headings?.h1}
+                      </h1>
+                      <div className="text-slate-300 whitespace-pre-wrap">
+                        {generatedContent.content}
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="meta">
+                  <div className="space-y-4">
+                    <div className="p-4 bg-slate-800/50 rounded-lg">
+                      <label className="text-sm text-slate-400">Meta Başlık</label>
+                      <p className="text-white mt-1">{generatedContent.meta?.title}</p>
+                    </div>
+                    <div className="p-4 bg-slate-800/50 rounded-lg">
+                      <label className="text-sm text-slate-400">Meta Açıklama</label>
+                      <p className="text-white mt-1">{generatedContent.meta?.description}</p>
+                    </div>
+                    <div className="p-4 bg-slate-800/50 rounded-lg">
+                      <label className="text-sm text-slate-400">URL Slug</label>
+                      <p className="text-white mt-1">{generatedContent.meta?.slug}</p>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="keywords">
+                  <div className="p-4 bg-slate-800/50 rounded-lg">
+                    <label className="text-sm text-slate-400 block mb-2">LSI Anahtar Kelimeler</label>
+                    <div className="flex flex-wrap gap-2">
+                      {generatedContent.lsiKeywords?.map((keyword: string, index: number) => (
+                        <Badge key={index}>{keyword}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div className="flex justify-between gap-3 mt-6 pt-4 border-t border-slate-800">
+                <Button variant="outline" onClick={() => setStep(2)}>
+                  Geri
+                </Button>
+                <div className="flex gap-3">
+                  <Button variant="secondary" onClick={handleGenerate} loading={generating}>
+                    Yeniden Oluştur
+                  </Button>
+                  <Button onClick={handleSave} loading={loading}>
+                    Kaydet
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
