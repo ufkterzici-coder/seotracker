@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateMetaTags } from '@/lib/ai/claude';
+import { generateMetaTags } from '@/lib/ai/groq';
 import { verifyAuth } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {

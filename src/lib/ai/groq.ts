@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
 });
 
 export interface GenerateOptions {
@@ -11,20 +11,25 @@ export interface GenerateOptions {
   temperature?: number;
 }
 
-export async function generateWithClaude(options: GenerateOptions): Promise<string> {
+export async function generateWithGroq(options: GenerateOptions): Promise<string> {
   const { prompt, systemPrompt, maxTokens = 4096, temperature = 0.7 } = options;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+  const messages: Groq.Chat.ChatCompletionMessageParam[] = [];
+
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await groq.chat.completions.create({
+    model: 'llama-3.3-70b-versatile',
+    messages,
     max_tokens: maxTokens,
-    system: systemPrompt || 'You are a helpful assistant.',
-    messages: [
-      { role: 'user', content: prompt }
-    ],
+    temperature,
   });
 
-  const textBlock = response.content.find(block => block.type === 'text');
-  return textBlock ? textBlock.text : '';
+  return response.choices[0]?.message?.content || '';
 }
 
 export async function generateSEOContent(params: {
@@ -77,7 +82,7 @@ Please generate content in the following JSON format:
   "imageAltSuggestions": ["alt text 1", "alt text 2", ...]
 }`;
 
-  const response = await generateWithClaude({
+  const response = await generateWithGroq({
     prompt,
     systemPrompt,
     maxTokens: 4096,
@@ -115,7 +120,7 @@ Generate in JSON format:
   "slug": "url-friendly-slug"
 }`;
 
-  const response = await generateWithClaude({
+  const response = await generateWithGroq({
     prompt,
     maxTokens: 500,
     temperature: 0.5,
@@ -150,7 +155,7 @@ Return in JSON format:
   ]
 }`;
 
-  const response = await generateWithClaude({
+  const response = await generateWithGroq({
     prompt,
     maxTokens: 2000,
     temperature: 0.6,
@@ -176,7 +181,7 @@ ${params.content}
 
 Return the improved content in Markdown format.`;
 
-  const response = await generateWithClaude({
+  const response = await generateWithGroq({
     prompt,
     maxTokens: 4096,
     temperature: 0.6,
@@ -208,7 +213,7 @@ Return in JSON format:
   ]
 }`;
 
-  const response = await generateWithClaude({
+  const response = await generateWithGroq({
     prompt,
     maxTokens: 1500,
     temperature: 0.7,
@@ -225,6 +230,3 @@ Return in JSON format:
 
   return null;
 }
-
-// Re-export for backward compatibility
-export { generateWithClaude as generateWithGroq };
