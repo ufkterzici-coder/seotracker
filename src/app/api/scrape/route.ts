@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     for (const url of urls) {
       if (useCache) {
-        const cached = getCachedScrape(url);
+        const cached = await getCachedScrape(url);
         if (cached) {
           results.push({
             url: cached.url,
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 24);
 
-        setCachedScrape({
+        await setCachedScrape({
           url: page.url,
           title: page.title,
           content: page.content,

@@ -1,69 +1,83 @@
-import { getDatabase } from './index';
+import { getDatabase, saveDatabase } from './index';
 import { Content, Template, ScrapedCache } from '@/types/content';
 import { nanoid } from 'nanoid';
 
+// Helper to convert sql.js result to object array
+function resultToObjects<T>(result: { columns: string[]; values: unknown[][] } | undefined): T[] {
+  if (!result || !result.values.length) return [];
+  return result.values.map((row) => {
+    const obj: Record<string, unknown> = {};
+    result.columns.forEach((col, i) => {
+      obj[col] = row[i];
+    });
+    return obj as T;
+  });
+}
+
 // Content queries
-export function getAllContents(status?: string): Content[] {
-  const db = getDatabase();
+export async function getAllContents(status?: string): Promise<Content[]> {
+  const db = await getDatabase();
+  let result;
   if (status) {
-    const stmt = db.prepare('SELECT * FROM contents WHERE status = ? ORDER BY created_at DESC');
-    return stmt.all(status) as Content[];
+    result = db.exec('SELECT * FROM contents WHERE status = ? ORDER BY created_at DESC', [status]);
+  } else {
+    result = db.exec('SELECT * FROM contents ORDER BY created_at DESC');
   }
-  const stmt = db.prepare('SELECT * FROM contents ORDER BY created_at DESC');
-  return stmt.all() as Content[];
+  return resultToObjects<Content>(result[0]);
 }
 
-export function getContentById(id: string): Content | undefined {
-  const db = getDatabase();
-  const stmt = db.prepare('SELECT * FROM contents WHERE id = ?');
-  return stmt.get(id) as Content | undefined;
+export async function getContentById(id: string): Promise<Content | undefined> {
+  const db = await getDatabase();
+  const result = db.exec('SELECT * FROM contents WHERE id = ?', [id]);
+  const contents = resultToObjects<Content>(result[0]);
+  return contents[0];
 }
 
-export function createContent(data: Partial<Content>): Content {
-  const db = getDatabase();
+export async function createContent(data: Partial<Content>): Promise<Content> {
+  const db = await getDatabase();
   const id = data.id || nanoid();
   const now = new Date().toISOString();
 
-  const stmt = db.prepare(`
-    INSERT INTO contents (
+  db.run(
+    `INSERT INTO contents (
       id, title, slug, meta_title, meta_description, content, html_content,
       main_keyword, lsi_keywords, search_intent, headings, schema_markup,
       readability_score, seo_score, word_count, competitor_urls, competitor_data,
       featured_image, image_alt_text, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  stmt.run(
-    id,
-    data.title || 'Untitled',
-    data.slug || null,
-    data.meta_title || null,
-    data.meta_description || null,
-    data.content || null,
-    data.html_content || null,
-    data.main_keyword || null,
-    data.lsi_keywords || null,
-    data.search_intent || null,
-    data.headings || null,
-    data.schema_markup || null,
-    data.readability_score || null,
-    data.seo_score || null,
-    data.word_count || null,
-    data.competitor_urls || null,
-    data.competitor_data || null,
-    data.featured_image || null,
-    data.image_alt_text || null,
-    data.status || 'draft',
-    now,
-    now
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      data.title || 'Untitled',
+      data.slug || null,
+      data.meta_title || null,
+      data.meta_description || null,
+      data.content || null,
+      data.html_content || null,
+      data.main_keyword || null,
+      data.lsi_keywords || null,
+      data.search_intent || null,
+      data.headings || null,
+      data.schema_markup || null,
+      data.readability_score || null,
+      data.seo_score || null,
+      data.word_count || null,
+      data.competitor_urls || null,
+      data.competitor_data || null,
+      data.featured_image || null,
+      data.image_alt_text || null,
+      data.status || 'draft',
+      now,
+      now,
+    ]
   );
 
-  return getContentById(id)!;
+  saveDatabase();
+  return (await getContentById(id))!;
 }
 
-export function updateContent(id: string, data: Partial<Content>): Content | undefined {
-  const db = getDatabase();
-  const existing = getContentById(id);
+export async function updateContent(id: string, data: Partial<Content>): Promise<Content | undefined> {
+  const db = await getDatabase();
+  const existing = await getContentById(id);
   if (!existing) return undefined;
 
   const updates: string[] = [];
@@ -89,123 +103,141 @@ export function updateContent(id: string, data: Partial<Content>): Content | und
   values.push(new Date().toISOString());
   values.push(id);
 
-  const stmt = db.prepare(`UPDATE contents SET ${updates.join(', ')} WHERE id = ?`);
-  stmt.run(...values);
+  db.run(`UPDATE contents SET ${updates.join(', ')} WHERE id = ?`, values);
+  saveDatabase();
 
   return getContentById(id);
 }
 
-export function deleteContent(id: string): boolean {
-  const db = getDatabase();
-  const stmt = db.prepare('DELETE FROM contents WHERE id = ?');
-  const result = stmt.run(id);
-  return result.changes > 0;
+export async function deleteContent(id: string): Promise<boolean> {
+  const db = await getDatabase();
+  const before = db.exec('SELECT COUNT(*) as count FROM contents WHERE id = ?', [id]);
+  const countBefore = before[0]?.values[0]?.[0] as number || 0;
+
+  if (countBefore === 0) return false;
+
+  db.run('DELETE FROM contents WHERE id = ?', [id]);
+  saveDatabase();
+  return true;
 }
 
 // Template queries
-export function getAllTemplates(): Template[] {
-  const db = getDatabase();
-  const stmt = db.prepare('SELECT * FROM templates ORDER BY is_default DESC, name ASC');
-  return stmt.all() as Template[];
+export async function getAllTemplates(): Promise<Template[]> {
+  const db = await getDatabase();
+  const result = db.exec('SELECT * FROM templates ORDER BY is_default DESC, name ASC');
+  return resultToObjects<Template>(result[0]);
 }
 
-export function getTemplateById(id: string): Template | undefined {
-  const db = getDatabase();
-  const stmt = db.prepare('SELECT * FROM templates WHERE id = ?');
-  return stmt.get(id) as Template | undefined;
+export async function getTemplateById(id: string): Promise<Template | undefined> {
+  const db = await getDatabase();
+  const result = db.exec('SELECT * FROM templates WHERE id = ?', [id]);
+  const templates = resultToObjects<Template>(result[0]);
+  return templates[0];
 }
 
-export function createTemplate(data: Partial<Template>): Template {
-  const db = getDatabase();
+export async function createTemplate(data: Partial<Template>): Promise<Template> {
+  const db = await getDatabase();
   const id = data.id || nanoid();
   const now = new Date().toISOString();
 
-  const stmt = db.prepare(`
-    INSERT INTO templates (id, name, description, structure, prompts, is_default, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  stmt.run(
-    id,
-    data.name || 'Untitled Template',
-    data.description || null,
-    data.structure || null,
-    data.prompts || null,
-    data.is_default || 0,
-    now
+  db.run(
+    `INSERT INTO templates (id, name, description, structure, prompts, is_default, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      data.name || 'Untitled Template',
+      data.description || null,
+      data.structure || null,
+      data.prompts || null,
+      data.is_default || 0,
+      now,
+    ]
   );
 
-  return getTemplateById(id)!;
+  saveDatabase();
+  return (await getTemplateById(id))!;
 }
 
-export function deleteTemplate(id: string): boolean {
-  const db = getDatabase();
-  const stmt = db.prepare('DELETE FROM templates WHERE id = ?');
-  const result = stmt.run(id);
-  return result.changes > 0;
+export async function deleteTemplate(id: string): Promise<boolean> {
+  const db = await getDatabase();
+  const before = db.exec('SELECT COUNT(*) as count FROM templates WHERE id = ?', [id]);
+  const countBefore = before[0]?.values[0]?.[0] as number || 0;
+
+  if (countBefore === 0) return false;
+
+  db.run('DELETE FROM templates WHERE id = ?', [id]);
+  saveDatabase();
+  return true;
 }
 
 // Cache queries
-export function getCachedScrape(url: string): ScrapedCache | undefined {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    SELECT * FROM scraped_cache
-    WHERE url = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
-  `);
-  return stmt.get(url) as ScrapedCache | undefined;
+export async function getCachedScrape(url: string): Promise<ScrapedCache | undefined> {
+  const db = await getDatabase();
+  const result = db.exec(
+    `SELECT * FROM scraped_cache
+     WHERE url = ? AND (expires_at IS NULL OR expires_at > datetime('now'))`,
+    [url]
+  );
+  const caches = resultToObjects<ScrapedCache>(result[0]);
+  return caches[0];
 }
 
-export function setCachedScrape(data: Omit<ScrapedCache, 'id' | 'scraped_at'>): void {
-  const db = getDatabase();
+export async function setCachedScrape(data: Omit<ScrapedCache, 'id' | 'scraped_at'>): Promise<void> {
+  const db = await getDatabase();
   const id = nanoid();
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO scraped_cache (id, url, title, content, headings, word_count, scraped_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)
-  `);
-
-  stmt.run(
-    id,
-    data.url,
-    data.title || null,
-    data.content || null,
-    data.headings || null,
-    data.word_count || null,
-    data.expires_at || null
+  db.run(
+    `INSERT OR REPLACE INTO scraped_cache (id, url, title, content, headings, word_count, scraped_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
+    [
+      id,
+      data.url,
+      data.title || null,
+      data.content || null,
+      data.headings || null,
+      data.word_count || null,
+      data.expires_at || null,
+    ]
   );
+
+  saveDatabase();
 }
 
-export function clearExpiredCache(): number {
-  const db = getDatabase();
-  const stmt = db.prepare(`DELETE FROM scraped_cache WHERE expires_at < datetime('now')`);
-  const result = stmt.run();
-  return result.changes;
+export async function clearExpiredCache(): Promise<number> {
+  const db = await getDatabase();
+  const before = db.exec(`SELECT COUNT(*) as count FROM scraped_cache WHERE expires_at < datetime('now')`);
+  const countBefore = before[0]?.values[0]?.[0] as number || 0;
+
+  db.run(`DELETE FROM scraped_cache WHERE expires_at < datetime('now')`);
+  saveDatabase();
+
+  return countBefore;
 }
 
 // Stats
-export function getContentStats(): {
+export async function getContentStats(): Promise<{
   total: number;
   drafts: number;
   published: number;
   todayCount: number;
   avgWordCount: number;
   avgSeoScore: number;
-} {
-  const db = getDatabase();
+}> {
+  const db = await getDatabase();
 
-  const totalStmt = db.prepare('SELECT COUNT(*) as count FROM contents');
-  const draftsStmt = db.prepare("SELECT COUNT(*) as count FROM contents WHERE status = 'draft'");
-  const publishedStmt = db.prepare("SELECT COUNT(*) as count FROM contents WHERE status = 'published'");
-  const todayStmt = db.prepare("SELECT COUNT(*) as count FROM contents WHERE date(created_at) = date('now')");
-  const avgWordStmt = db.prepare('SELECT AVG(word_count) as avg FROM contents WHERE word_count IS NOT NULL');
-  const avgSeoStmt = db.prepare('SELECT AVG(seo_score) as avg FROM contents WHERE seo_score IS NOT NULL');
+  const totalResult = db.exec('SELECT COUNT(*) as count FROM contents');
+  const draftsResult = db.exec("SELECT COUNT(*) as count FROM contents WHERE status = 'draft'");
+  const publishedResult = db.exec("SELECT COUNT(*) as count FROM contents WHERE status = 'published'");
+  const todayResult = db.exec("SELECT COUNT(*) as count FROM contents WHERE date(created_at) = date('now')");
+  const avgWordResult = db.exec('SELECT AVG(word_count) as avg FROM contents WHERE word_count IS NOT NULL');
+  const avgSeoResult = db.exec('SELECT AVG(seo_score) as avg FROM contents WHERE seo_score IS NOT NULL');
 
   return {
-    total: (totalStmt.get() as { count: number }).count,
-    drafts: (draftsStmt.get() as { count: number }).count,
-    published: (publishedStmt.get() as { count: number }).count,
-    todayCount: (todayStmt.get() as { count: number }).count,
-    avgWordCount: Math.round((avgWordStmt.get() as { avg: number | null }).avg || 0),
-    avgSeoScore: Math.round((avgSeoStmt.get() as { avg: number | null }).avg || 0),
+    total: (totalResult[0]?.values[0]?.[0] as number) || 0,
+    drafts: (draftsResult[0]?.values[0]?.[0] as number) || 0,
+    published: (publishedResult[0]?.values[0]?.[0] as number) || 0,
+    todayCount: (todayResult[0]?.values[0]?.[0] as number) || 0,
+    avgWordCount: Math.round((avgWordResult[0]?.values[0]?.[0] as number) || 0),
+    avgSeoScore: Math.round((avgSeoResult[0]?.values[0]?.[0] as number) || 0),
   };
 }

@@ -22,12 +22,12 @@ export async function GET(request: NextRequest) {
     const stats = searchParams.get('stats');
 
     if (stats === 'true') {
-      const contentStats = getContentStats();
+      const contentStats = await getContentStats();
       return NextResponse.json({ stats: contentStats });
     }
 
     if (id) {
-      const content = getContentById(id);
+      const content = await getContentById(id);
       if (!content) {
         return NextResponse.json(
           { error: 'İçerik bulunamadı' },
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ content });
     }
 
-    const contents = getAllContents(status || undefined);
+    const contents = await getAllContents(status || undefined);
     return NextResponse.json({ contents });
   } catch (error) {
     console.error('Get content error:', error);
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const content = createContent(data);
+    const content = await createContent(data);
     return NextResponse.json({ content }, { status: 201 });
   } catch (error) {
     console.error('Create content error:', error);
@@ -93,7 +93,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const data = await request.json();
-    const content = updateContent(id, data);
+    const content = await updateContent(id, data);
 
     if (!content) {
       return NextResponse.json(
@@ -129,7 +129,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deleted = deleteContent(id);
+    const deleted = await deleteContent(id);
 
     if (!deleted) {
       return NextResponse.json(

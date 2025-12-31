@@ -13,7 +13,7 @@ export default async function TemplatesPage() {
     redirect('/login');
   }
 
-  const templates = getAllTemplates();
+  const templates = await getAllTemplates();
 
   return (
     <DashboardLayout>

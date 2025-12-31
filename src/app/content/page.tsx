@@ -16,7 +16,7 @@ export default async function ContentListPage() {
     redirect('/login');
   }
 
-  const contents = getAllContents();
+  const contents = await getAllContents();
 
   return (
     <DashboardLayout>

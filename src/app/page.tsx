@@ -16,8 +16,9 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  const stats = getContentStats();
-  const recentContents = getAllContents().slice(0, 5);
+  const stats = await getContentStats();
+  const allContents = await getAllContents();
+  const recentContents = allContents.slice(0, 5);
 
   return (
     <DashboardLayout>
