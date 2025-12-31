@@ -1,14 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['puppeteer', 'better-sqlite3'],
+    serverComponentsExternalPackages: ['puppeteer'],
   },
-  webpack: (config) => {
-    config.externals.push({
-      'better-sqlite3': 'commonjs better-sqlite3',
-    });
-    return config;
-  },
+  // Fallback for SWC binary issues on Windows
+  swcMinify: false,
 };
 
 module.exports = nextConfig;
