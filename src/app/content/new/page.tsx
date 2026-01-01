@@ -10,6 +10,7 @@ import Input from '@/components/ui/Input';
 import Textarea from '@/components/ui/Textarea';
 import Badge from '@/components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import SEOAnalysisPanel from '@/components/seo/SEOAnalysisPanel';
 
 interface KeywordSuggestion {
   keyword: string;
@@ -460,6 +461,7 @@ export default function NewContentPage() {
                   <TabsTrigger value="content">İçerik</TabsTrigger>
                   <TabsTrigger value="meta">Meta Bilgileri</TabsTrigger>
                   <TabsTrigger value="keywords">Anahtar Kelimeler</TabsTrigger>
+                  <TabsTrigger value="seo">SEO Analizi</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="content">
@@ -505,6 +507,18 @@ export default function NewContentPage() {
                       )}
                     </div>
                   </div>
+                </TabsContent>
+
+                <TabsContent value="seo">
+                  <SEOAnalysisPanel
+                    title={generatedContent.meta?.title || title}
+                    content={generatedContent.content || generatedContent.raw || ''}
+                    mainKeyword={mainKeyword}
+                    metaTitle={generatedContent.meta?.title}
+                    metaDescription={generatedContent.meta?.description}
+                    slug={generatedContent.meta?.slug}
+                    autoAnalyze={true}
+                  />
                 </TabsContent>
               </Tabs>
 

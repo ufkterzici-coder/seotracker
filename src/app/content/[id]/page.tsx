@@ -13,6 +13,7 @@ import Badge from '@/components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { CircularProgress } from '@/components/ui/Progress';
 import Modal, { ModalFooter } from '@/components/ui/Modal';
+import SEOAnalysisPanel from '@/components/seo/SEOAnalysisPanel';
 
 // Dynamic import for TipTap editor (client-side only)
 const RichTextEditor = dynamic(
@@ -426,6 +427,21 @@ export default function ContentViewPage() {
             </Card>
           </div>
         </div>
+
+        {/* SEO Analysis Section */}
+        {!editing && content.content && content.main_keyword && (
+          <div className="mt-8">
+            <h2 className="text-xl font-bold text-white mb-4">SEO Analizi</h2>
+            <SEOAnalysisPanel
+              title={content.title}
+              content={content.content}
+              mainKeyword={content.main_keyword}
+              metaTitle={content.meta_title}
+              metaDescription={content.meta_description}
+              slug={content.slug}
+            />
+          </div>
+        )}
       </div>
 
       {/* Delete Modal */}
