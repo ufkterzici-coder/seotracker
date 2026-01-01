@@ -17,6 +17,7 @@ export default function NewContentPage() {
   const [scraping, setScraping] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [step, setStep] = useState(1);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -33,23 +34,32 @@ export default function NewContentPage() {
 
   const handleScrape = async () => {
     const urls = competitorUrls.split('\n').filter((url) => url.trim());
-    if (urls.length === 0) return;
 
     setScraping(true);
-    try {
-      const response = await fetch('/api/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls }),
-      });
+    setError(null);
 
-      const data = await response.json();
-      if (data.results) {
-        setScrapedContent(data.results);
-        setStep(2);
+    try {
+      if (urls.length > 0) {
+        const response = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Tarama hatası');
+        }
+
+        if (data.results) {
+          setScrapedContent(data.results);
+        }
       }
-    } catch (error) {
-      console.error('Scrape error:', error);
+      setStep(2);
+    } catch (err: any) {
+      console.error('Scrape error:', err);
+      setError(err.message || 'Sayfa tarama hatası');
     } finally {
       setScraping(false);
     }
@@ -57,6 +67,8 @@ export default function NewContentPage() {
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setError(null);
+
     try {
       const response = await fetch('/api/generate/content', {
         method: 'POST',
@@ -64,19 +76,27 @@ export default function NewContentPage() {
         body: JSON.stringify({
           topic: title,
           mainKeyword,
-          competitorContents: scrapedContent.map((c) => c.content),
+          competitorContents: scrapedContent.map((c) => c.content).filter(Boolean),
           wordCount,
           searchIntent,
         }),
       });
 
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'İçerik oluşturma hatası');
+      }
+
       if (data.result) {
         setGeneratedContent(data.result);
         setStep(3);
+      } else {
+        throw new Error('İçerik oluşturulamadı. Lütfen tekrar deneyin.');
       }
-    } catch (error) {
-      console.error('Generate error:', error);
+    } catch (err: any) {
+      console.error('Generate error:', err);
+      setError(err.message || 'İçerik oluşturma hatası');
     } finally {
       setGenerating(false);
     }
@@ -84,6 +104,8 @@ export default function NewContentPage() {
 
   const handleSave = async () => {
     setLoading(true);
+    setError(null);
+
     try {
       const response = await fetch('/api/content', {
         method: 'POST',
@@ -105,11 +127,17 @@ export default function NewContentPage() {
       });
 
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Kaydetme hatası');
+      }
+
       if (data.content) {
         router.push(`/content/${data.content.id}`);
       }
-    } catch (error) {
-      console.error('Save error:', error);
+    } catch (err: any) {
+      console.error('Save error:', err);
+      setError(err.message || 'İçerik kaydetme hatası');
     } finally {
       setLoading(false);
     }
@@ -123,6 +151,18 @@ export default function NewContentPage() {
       />
 
       <div className="p-6">
+        {/* Error Alert */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
+
         {/* Progress Steps */}
         <div className="flex items-center justify-center mb-8">
           {[1, 2, 3].map((s) => (
@@ -167,7 +207,7 @@ export default function NewContentPage() {
                 />
 
                 <Textarea
-                  label="Rakip URL'ler (Her satıra bir URL)"
+                  label="Rakip URL'ler (Her satıra bir URL - opsiyonel)"
                   placeholder="https://example.com/article1&#10;https://example.com/article2"
                   value={competitorUrls}
                   onChange={(e) => setCompetitorUrls(e.target.value)}
@@ -205,7 +245,7 @@ export default function NewContentPage() {
                     loading={scraping}
                     disabled={!title || !mainKeyword}
                   >
-                    Rakipleri Tara ve Devam Et
+                    {competitorUrls.trim() ? 'Rakipleri Tara ve Devam Et' : 'Devam Et'}
                   </Button>
                 </div>
               </div>
@@ -225,14 +265,16 @@ export default function NewContentPage() {
                     <div key={index} className="p-4 bg-slate-800/50 rounded-lg">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <h3 className="font-medium text-white">{content.title}</h3>
+                          <h3 className="font-medium text-white">{content.title || 'Başlık bulunamadı'}</h3>
                           <p className="text-sm text-slate-400 truncate mt-1">{content.url}</p>
                         </div>
-                        <Badge>{content.wordCount} kelime</Badge>
+                        <Badge>{content.wordCount || 0} kelime</Badge>
                       </div>
-                      <p className="text-sm text-slate-400 mt-3 line-clamp-3">
-                        {content.content?.substring(0, 300)}...
-                      </p>
+                      {content.content && (
+                        <p className="text-sm text-slate-400 mt-3 line-clamp-3">
+                          {content.content.substring(0, 300)}...
+                        </p>
+                      )}
                     </div>
                   ))
                 )}
@@ -242,7 +284,7 @@ export default function NewContentPage() {
                     Geri
                   </Button>
                   <Button onClick={handleGenerate} loading={generating}>
-                    İçerik Oluştur
+                    {generating ? 'İçerik Oluşturuluyor...' : 'İçerik Oluştur'}
                   </Button>
                 </div>
               </div>
@@ -263,10 +305,10 @@ export default function NewContentPage() {
                   <div className="prose prose-invert max-w-none">
                     <div className="p-4 bg-slate-800/50 rounded-lg">
                       <h1 className="text-xl font-bold text-white mb-4">
-                        {generatedContent.headings?.h1}
+                        {generatedContent.headings?.h1 || generatedContent.meta?.title || title}
                       </h1>
                       <div className="text-slate-300 whitespace-pre-wrap">
-                        {generatedContent.content}
+                        {generatedContent.content || generatedContent.raw || 'İçerik oluşturuldu'}
                       </div>
                     </div>
                   </div>
@@ -276,15 +318,15 @@ export default function NewContentPage() {
                   <div className="space-y-4">
                     <div className="p-4 bg-slate-800/50 rounded-lg">
                       <label className="text-sm text-slate-400">Meta Başlık</label>
-                      <p className="text-white mt-1">{generatedContent.meta?.title}</p>
+                      <p className="text-white mt-1">{generatedContent.meta?.title || '-'}</p>
                     </div>
                     <div className="p-4 bg-slate-800/50 rounded-lg">
                       <label className="text-sm text-slate-400">Meta Açıklama</label>
-                      <p className="text-white mt-1">{generatedContent.meta?.description}</p>
+                      <p className="text-white mt-1">{generatedContent.meta?.description || '-'}</p>
                     </div>
                     <div className="p-4 bg-slate-800/50 rounded-lg">
                       <label className="text-sm text-slate-400">URL Slug</label>
-                      <p className="text-white mt-1">{generatedContent.meta?.slug}</p>
+                      <p className="text-white mt-1">{generatedContent.meta?.slug || '-'}</p>
                     </div>
                   </div>
                 </TabsContent>
@@ -293,9 +335,13 @@ export default function NewContentPage() {
                   <div className="p-4 bg-slate-800/50 rounded-lg">
                     <label className="text-sm text-slate-400 block mb-2">LSI Anahtar Kelimeler</label>
                     <div className="flex flex-wrap gap-2">
-                      {generatedContent.lsiKeywords?.map((keyword: string, index: number) => (
-                        <Badge key={index}>{keyword}</Badge>
-                      ))}
+                      {generatedContent.lsiKeywords?.length > 0 ? (
+                        generatedContent.lsiKeywords.map((keyword: string, index: number) => (
+                          <Badge key={index}>{keyword}</Badge>
+                        ))
+                      ) : (
+                        <span className="text-slate-500">Anahtar kelime bulunamadı</span>
+                      )}
                     </div>
                   </div>
                 </TabsContent>

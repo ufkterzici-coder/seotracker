@@ -1,8 +1,14 @@
 import Groq from 'groq-sdk';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+function getGroqClient(): Groq {
+  const apiKey = process.env.GROQ_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('GROQ_API_KEY ortam değişkeni tanımlanmamış. Lütfen .env.local dosyasına ekleyin.');
+  }
+
+  return new Groq({ apiKey });
+}
 
 export interface GenerateOptions {
   prompt: string;
@@ -14,6 +20,8 @@ export interface GenerateOptions {
 export async function generateWithGroq(options: GenerateOptions): Promise<string> {
   const { prompt, systemPrompt, maxTokens = 4096, temperature = 0.7 } = options;
 
+  const groq = getGroqClient();
+
   const messages: Groq.Chat.ChatCompletionMessageParam[] = [];
 
   if (systemPrompt) {
@@ -22,14 +30,25 @@ export async function generateWithGroq(options: GenerateOptions): Promise<string
 
   messages.push({ role: 'user', content: prompt });
 
-  const response = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    messages,
-    max_tokens: maxTokens,
-    temperature,
-  });
+  try {
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages,
+      max_tokens: maxTokens,
+      temperature,
+    });
 
-  return response.choices[0]?.message?.content || '';
+    return response.choices[0]?.message?.content || '';
+  } catch (error: any) {
+    console.error('Groq API error:', error);
+    if (error.status === 401) {
+      throw new Error('Geçersiz GROQ API anahtarı. Lütfen .env.local dosyasındaki GROQ_API_KEY değerini kontrol edin.');
+    }
+    if (error.status === 429) {
+      throw new Error('API istek limiti aşıldı. Lütfen birkaç dakika bekleyip tekrar deneyin.');
+    }
+    throw new Error(`AI içerik oluşturma hatası: ${error.message || 'Bilinmeyen hata'}`);
+  }
 }
 
 export async function generateSEOContent(params: {
