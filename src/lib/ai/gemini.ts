@@ -171,3 +171,129 @@ Return in JSON format:
     reason: 'Default recommendation',
   };
 }
+
+export interface ImageSuggestion {
+  type: 'hero' | 'infographic' | 'diagram' | 'illustration' | 'photo';
+  title: string;
+  description: string;
+  prompt: string;
+  altText: string;
+  placement: string;
+  keywords: string[];
+}
+
+export async function generateImageSuggestions(params: {
+  title: string;
+  content: string;
+  mainKeyword: string;
+  count?: number;
+}): Promise<ImageSuggestion[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY ortam değişkeni tanımlanmamış');
+  }
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+  const prompt = `İçerik için SEO uyumlu görsel önerileri oluştur.
+
+Başlık: ${params.title}
+Ana Anahtar Kelime: ${params.mainKeyword}
+
+İçerik Özeti:
+${params.content.substring(0, 2000)}
+
+${params.count || 5} adet görsel önerisi oluştur. Her öneri için:
+1. Görsel türü (hero, infographic, diagram, illustration, photo)
+2. Görsel başlığı
+3. Görsel açıklaması
+4. AI görsel oluşturucu için İngilizce prompt
+5. SEO uyumlu alt text (Türkçe)
+6. Önerilen yerleşim (hero, in-content, sidebar, etc.)
+7. İlişkili anahtar kelimeler
+
+JSON formatında döndür:
+[
+  {
+    "type": "hero",
+    "title": "Görsel başlığı",
+    "description": "Görsel açıklaması",
+    "prompt": "Detailed AI image generation prompt in English...",
+    "altText": "SEO uyumlu Türkçe alt text",
+    "placement": "hero",
+    "keywords": ["keyword1", "keyword2"]
+  }
+]`;
+
+  const result = await model.generateContent(prompt);
+  const text = result.response.text();
+
+  try {
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const suggestions = JSON.parse(jsonMatch[0]);
+      return suggestions.map((s: any) => ({
+        type: s.type || 'illustration',
+        title: s.title || '',
+        description: s.description || '',
+        prompt: s.prompt || '',
+        altText: s.altText || '',
+        placement: s.placement || 'in-content',
+        keywords: s.keywords || [],
+      }));
+    }
+  } catch (e) {
+    console.error('Failed to parse image suggestions:', e);
+  }
+
+  return [];
+}
+
+export async function generateStockImageKeywords(params: {
+  title: string;
+  mainKeyword: string;
+  content?: string;
+}): Promise<{
+  primary: string[];
+  secondary: string[];
+  styles: string[];
+}> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY ortam değişkeni tanımlanmamış');
+  }
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+  const prompt = `İçerik için stok fotoğraf sitelerinde arama yapılabilecek anahtar kelimeler öner.
+
+Başlık: ${params.title}
+Ana Anahtar Kelime: ${params.mainKeyword}
+
+JSON formatında döndür:
+{
+  "primary": ["ana arama kelimesi 1", "ana arama kelimesi 2", ...],
+  "secondary": ["ikincil kelime 1", "ikincil kelime 2", ...],
+  "styles": ["minimalist", "modern", "professional", ...]
+}
+
+Anahtar kelimeler İngilizce olmalı (stok foto sitelerinde kullanım için).`;
+
+  const result = await model.generateContent(prompt);
+  const text = result.response.text();
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (e) {
+    console.error('Failed to parse stock image keywords:', e);
+  }
+
+  return {
+    primary: [params.mainKeyword],
+    secondary: [],
+    styles: ['professional', 'modern'],
+  };
+}
