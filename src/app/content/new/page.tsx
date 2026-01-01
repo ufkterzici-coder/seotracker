@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Header from '@/components/layout/Header';
@@ -11,11 +11,23 @@ import Textarea from '@/components/ui/Textarea';
 import Badge from '@/components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 
+interface KeywordSuggestion {
+  keyword: string;
+  intent: string;
+}
+
+interface KeywordSuggestions {
+  mainKeyword: string;
+  relatedKeywords: KeywordSuggestion[];
+  longTailKeywords: KeywordSuggestion[];
+}
+
 export default function NewContentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [suggestingKeywords, setSuggestingKeywords] = useState(false);
   const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,11 +38,63 @@ export default function NewContentPage() {
   const [wordCount, setWordCount] = useState(1500);
   const [searchIntent, setSearchIntent] = useState('informational');
 
+  // Keyword suggestions
+  const [keywordSuggestions, setKeywordSuggestions] = useState<KeywordSuggestions | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   // Scraped content
   const [scrapedContent, setScrapedContent] = useState<any[]>([]);
 
   // Generated content
   const [generatedContent, setGeneratedContent] = useState<any>(null);
+
+  // Debounced keyword fetch
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (title.trim().length >= 5) {
+        fetchKeywordSuggestions(title);
+      } else {
+        setKeywordSuggestions(null);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [title]);
+
+  const fetchKeywordSuggestions = async (topic: string) => {
+    setSuggestingKeywords(true);
+    try {
+      const response = await fetch('/api/generate/keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.keywords) {
+        setKeywordSuggestions(data.keywords);
+        setShowSuggestions(true);
+
+        // Auto-fill main keyword if empty
+        if (!mainKeyword && data.keywords.mainKeyword) {
+          setMainKeyword(data.keywords.mainKeyword);
+        }
+      }
+    } catch (err) {
+      console.error('Keyword suggestion error:', err);
+    } finally {
+      setSuggestingKeywords(false);
+    }
+  };
+
+  const selectKeyword = (keyword: string, intent?: string) => {
+    setMainKeyword(keyword);
+    if (intent) {
+      setSearchIntent(intent);
+    }
+    setShowSuggestions(false);
+  };
 
   const handleScrape = async () => {
     const urls = competitorUrls.split('\n').filter((url) => url.trim());
@@ -143,6 +207,20 @@ export default function NewContentPage() {
     }
   };
 
+  const intentLabels: Record<string, string> = {
+    informational: 'Bilgilendirici',
+    transactional: 'İşlemsel',
+    commercial: 'Ticari',
+    navigational: 'Navigasyonel',
+  };
+
+  const intentColors: Record<string, string> = {
+    informational: 'bg-blue-500/20 text-blue-400',
+    transactional: 'bg-green-500/20 text-green-400',
+    commercial: 'bg-purple-500/20 text-purple-400',
+    navigational: 'bg-orange-500/20 text-orange-400',
+  };
+
   return (
     <DashboardLayout>
       <Header
@@ -192,19 +270,102 @@ export default function NewContentPage() {
           {step === 1 && (
             <Card title="Adım 1: İçerik Bilgileri" description="Hedef konu ve rakip URL'leri girin">
               <div className="space-y-6">
-                <Input
-                  label="Konu / Başlık"
-                  placeholder="Örn: En İyi SEO Araçları 2024"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
+                <div>
+                  <Input
+                    label="Konu / Başlık"
+                    placeholder="Örn: En İyi SEO Araçları 2024"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
+                  {suggestingKeywords && (
+                    <p className="text-sm text-slate-400 mt-2 flex items-center gap-2">
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Anahtar kelimeler öneriliyor...
+                    </p>
+                  )}
+                </div>
 
-                <Input
-                  label="Ana Anahtar Kelime"
-                  placeholder="Örn: seo araçları"
-                  value={mainKeyword}
-                  onChange={(e) => setMainKeyword(e.target.value)}
-                />
+                <div className="relative">
+                  <Input
+                    label="Ana Anahtar Kelime"
+                    placeholder="Örn: seo araçları"
+                    value={mainKeyword}
+                    onChange={(e) => setMainKeyword(e.target.value)}
+                    onFocus={() => keywordSuggestions && setShowSuggestions(true)}
+                  />
+
+                  {/* Keyword Suggestions Dropdown */}
+                  {showSuggestions && keywordSuggestions && (
+                    <div className="absolute z-10 w-full mt-2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-80 overflow-y-auto">
+                      <div className="p-3 border-b border-slate-700">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-slate-300">Önerilen Anahtar Kelimeler</span>
+                          <button
+                            onClick={() => setShowSuggestions(false)}
+                            className="text-slate-500 hover:text-slate-300"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Main Keyword */}
+                      <div className="p-2">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">Ana Anahtar Kelime</p>
+                        <button
+                          onClick={() => selectKeyword(keywordSuggestions.mainKeyword)}
+                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-between group"
+                        >
+                          <span className="text-white font-medium">{keywordSuggestions.mainKeyword}</span>
+                          <Badge size="sm" className="bg-emerald-500/20 text-emerald-400">Önerilen</Badge>
+                        </button>
+                      </div>
+
+                      {/* Related Keywords */}
+                      {keywordSuggestions.relatedKeywords?.length > 0 && (
+                        <div className="p-2 border-t border-slate-700">
+                          <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">İlişkili Kelimeler</p>
+                          {keywordSuggestions.relatedKeywords.map((kw, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => selectKeyword(kw.keyword, kw.intent)}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-between"
+                            >
+                              <span className="text-slate-300">{kw.keyword}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
+                                {intentLabels[kw.intent] || kw.intent}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Long-tail Keywords */}
+                      {keywordSuggestions.longTailKeywords?.length > 0 && (
+                        <div className="p-2 border-t border-slate-700">
+                          <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">Uzun Kuyruk Kelimeler</p>
+                          {keywordSuggestions.longTailKeywords.map((kw, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => selectKeyword(kw.keyword, kw.intent)}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-between"
+                            >
+                              <span className="text-slate-300 text-sm">{kw.keyword}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
+                                {intentLabels[kw.intent] || kw.intent}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <Textarea
                   label="Rakip URL'ler (Her satıra bir URL - opsiyonel)"
