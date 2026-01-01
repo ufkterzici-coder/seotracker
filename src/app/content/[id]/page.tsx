@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -13,6 +14,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { CircularProgress } from '@/components/ui/Progress';
 import Modal, { ModalFooter } from '@/components/ui/Modal';
 
+// Dynamic import for TipTap editor (client-side only)
+const RichTextEditor = dynamic(
+  () => import('@/components/editor/RichTextEditor'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="border border-slate-700 rounded-lg p-4 min-h-[400px] animate-pulse bg-slate-800/50" />
+    )
+  }
+);
+
 export default function ContentViewPage() {
   const router = useRouter();
   const params = useParams();
@@ -21,6 +33,7 @@ export default function ContentViewPage() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   // Edit state
   const [editTitle, setEditTitle] = useState('');
@@ -53,15 +66,20 @@ export default function ContentViewPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Strip HTML tags for word count
+      const plainText = editContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const wordCount = plainText.split(/\s+/).filter(Boolean).length;
+
       const response = await fetch(`/api/content?id=${params.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: editTitle,
           content: editContent,
+          html_content: editContent,
           meta_title: editMetaTitle,
           meta_description: editMetaDesc,
-          word_count: editContent.split(/\s+/).filter(Boolean).length,
+          word_count: wordCount,
         }),
       });
 
@@ -108,7 +126,8 @@ export default function ContentViewPage() {
 
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
-    // You could add a toast notification here
+    setCopied(type);
+    setTimeout(() => setCopied(null), 2000);
   };
 
   if (loading) {
@@ -181,32 +200,53 @@ export default function ContentViewPage() {
                   <Input
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="İçerik başlığı"
                   />
                 </Card>
 
-                <Card title="İçerik">
-                  <Textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    rows={20}
+                <Card title="İçerik" padding="none">
+                  <RichTextEditor
+                    content={editContent}
+                    onChange={setEditContent}
+                    placeholder="İçeriğinizi buraya yazın..."
                   />
                 </Card>
 
                 <Card title="Meta Bilgileri">
                   <div className="space-y-4">
-                    <Input
-                      label="Meta Başlık"
-                      value={editMetaTitle}
-                      onChange={(e) => setEditMetaTitle(e.target.value)}
-                      helperText={`${editMetaTitle.length}/60 karakter`}
-                    />
-                    <Textarea
-                      label="Meta Açıklama"
-                      value={editMetaDesc}
-                      onChange={(e) => setEditMetaDesc(e.target.value)}
-                      rows={3}
-                      helperText={`${editMetaDesc.length}/155 karakter`}
-                    />
+                    <div>
+                      <Input
+                        label="Meta Başlık"
+                        value={editMetaTitle}
+                        onChange={(e) => setEditMetaTitle(e.target.value)}
+                        placeholder="SEO başlığı (max 60 karakter)"
+                      />
+                      <div className="flex justify-between mt-1">
+                        <span className={`text-xs ${editMetaTitle.length > 60 ? 'text-red-400' : 'text-slate-500'}`}>
+                          {editMetaTitle.length}/60 karakter
+                        </span>
+                        {editMetaTitle.length > 60 && (
+                          <span className="text-xs text-red-400">Çok uzun!</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <Textarea
+                        label="Meta Açıklama"
+                        value={editMetaDesc}
+                        onChange={(e) => setEditMetaDesc(e.target.value)}
+                        rows={3}
+                        placeholder="SEO açıklaması (max 155 karakter)"
+                      />
+                      <div className="flex justify-between mt-1">
+                        <span className={`text-xs ${editMetaDesc.length > 155 ? 'text-red-400' : 'text-slate-500'}`}>
+                          {editMetaDesc.length}/155 karakter
+                        </span>
+                        {editMetaDesc.length > 155 && (
+                          <span className="text-xs text-red-400">Çok uzun!</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </Card>
               </>
@@ -215,7 +255,7 @@ export default function ContentViewPage() {
                 <TabsList>
                   <TabsTrigger value="content">İçerik</TabsTrigger>
                   <TabsTrigger value="html">HTML</TabsTrigger>
-                  <TabsTrigger value="schema">Şema</TabsTrigger>
+                  <TabsTrigger value="preview">Önizleme</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="content">
@@ -223,17 +263,17 @@ export default function ContentViewPage() {
                     <div className="p-6">
                       <div className="prose prose-invert max-w-none">
                         <div className="whitespace-pre-wrap text-slate-300">
-                          {content.content}
+                          {content.content?.replace(/<[^>]*>/g, '') || 'İçerik yok'}
                         </div>
                       </div>
                     </div>
-                    <div className="border-t border-slate-800 p-4 flex justify-end">
+                    <div className="border-t border-slate-800 p-4 flex justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => copyToClipboard(content.content, 'Markdown')}
+                        onClick={() => copyToClipboard(content.content?.replace(/<[^>]*>/g, '') || '', 'text')}
                       >
-                        Kopyala
+                        {copied === 'text' ? 'Kopyalandı!' : 'Metni Kopyala'}
                       </Button>
                     </div>
                   </Card>
@@ -242,19 +282,36 @@ export default function ContentViewPage() {
                 <TabsContent value="html">
                   <Card padding="none">
                     <div className="p-6">
-                      <pre className="text-sm text-slate-400 overflow-x-auto">
-                        {content.html_content || 'HTML içerik mevcut değil'}
+                      <pre className="text-sm text-slate-400 overflow-x-auto whitespace-pre-wrap">
+                        {content.html_content || content.content || 'HTML içerik mevcut değil'}
                       </pre>
+                    </div>
+                    <div className="border-t border-slate-800 p-4 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(content.html_content || content.content || '', 'html')}
+                      >
+                        {copied === 'html' ? 'Kopyalandı!' : 'HTML Kopyala'}
+                      </Button>
                     </div>
                   </Card>
                 </TabsContent>
 
-                <TabsContent value="schema">
+                <TabsContent value="preview">
                   <Card padding="none">
                     <div className="p-6">
-                      <pre className="text-sm text-slate-400 overflow-x-auto">
-                        {content.schema_markup || 'Şema mevcut değil'}
-                      </pre>
+                      <div
+                        className="prose prose-invert prose-emerald max-w-none
+                          prose-headings:text-white prose-headings:font-bold
+                          prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl
+                          prose-p:text-slate-300 prose-p:leading-relaxed
+                          prose-a:text-emerald-400
+                          prose-blockquote:border-emerald-500 prose-blockquote:bg-slate-800/50
+                          prose-code:text-emerald-300 prose-code:bg-slate-800
+                          prose-li:text-slate-300"
+                        dangerouslySetInnerHTML={{ __html: content.html_content || content.content || '' }}
+                      />
                     </div>
                   </Card>
                 </TabsContent>
@@ -289,10 +346,20 @@ export default function ContentViewPage() {
                 <div>
                   <label className="text-sm text-slate-400">Meta Başlık</label>
                   <p className="text-white mt-1">{content.meta_title || '-'}</p>
+                  {content.meta_title && (
+                    <span className={`text-xs ${content.meta_title.length > 60 ? 'text-red-400' : 'text-slate-500'}`}>
+                      {content.meta_title.length}/60
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm text-slate-400">Meta Açıklama</label>
                   <p className="text-white mt-1 text-sm">{content.meta_description || '-'}</p>
+                  {content.meta_description && (
+                    <span className={`text-xs ${content.meta_description.length > 155 ? 'text-red-400' : 'text-slate-500'}`}>
+                      {content.meta_description.length}/155
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm text-slate-400">URL Slug</label>
@@ -312,9 +379,16 @@ export default function ContentViewPage() {
                   <div>
                     <label className="text-sm text-slate-400">LSI Kelimeler</label>
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {JSON.parse(content.lsi_keywords).map((kw: string, i: number) => (
-                        <Badge key={i} size="sm">{kw}</Badge>
-                      ))}
+                      {(() => {
+                        try {
+                          const keywords = JSON.parse(content.lsi_keywords);
+                          return keywords.map((kw: string, i: number) => (
+                            <Badge key={i} size="sm">{kw}</Badge>
+                          ));
+                        } catch {
+                          return <span className="text-slate-500">-</span>;
+                        }
+                      })()}
                     </div>
                   </div>
                 )}
@@ -335,6 +409,18 @@ export default function ContentViewPage() {
                 <div className="flex justify-between">
                   <span className="text-slate-400">Arama Niyeti</span>
                   <span className="text-white capitalize">{content.search_intent || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Oluşturulma</span>
+                  <span className="text-white text-sm">
+                    {new Date(content.created_at).toLocaleDateString('tr-TR')}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Güncelleme</span>
+                  <span className="text-white text-sm">
+                    {new Date(content.updated_at).toLocaleDateString('tr-TR')}
+                  </span>
                 </div>
               </div>
             </Card>
