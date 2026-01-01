@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth';
-import { generateArticleSchema, generateBlogPostSchema } from '@/lib/schema/article';
-import { generateFAQSchema } from '@/lib/schema/faq';
-import { generateHowToSchema } from '@/lib/schema/howto';
-import { generateProductSchema } from '@/lib/schema/product';
+import {
+  generateArticleSchema,
+  generateFAQSchema,
+  generateHowToSchema,
+  generateBreadcrumbSchema,
+  generateWebPageSchema,
+  extractFAQFromContent,
+  extractHowToFromContent,
+  combineSchemas,
+  formatSchemaAsScript,
+  FAQItem,
+  HowToStep,
+} from '@/lib/schema/generators';
 
 export async function POST(request: NextRequest) {
   const isAuth = await verifyAuth();
@@ -12,48 +21,183 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { type, data } = await request.json();
+    const body = await request.json();
+    const {
+      type,
+      title,
+      description,
+      content,
+      author,
+      datePublished,
+      dateModified,
+      imageUrl,
+      url,
+      keywords,
+      faqItems,
+      howToSteps,
+      totalTime,
+      autoExtract = false,
+    } = body;
 
-    if (!type || !data) {
+    if (!type) {
       return NextResponse.json(
-        { error: 'Şema tipi ve veriler gerekli' },
+        { error: 'Schema türü gerekli' },
         { status: 400 }
       );
     }
 
-    let schema;
+    let schema: object;
+    let extractedData: any = {};
 
     switch (type) {
       case 'article':
-        schema = generateArticleSchema(data);
+        if (!title || !description) {
+          return NextResponse.json(
+            { error: 'Başlık ve açıklama gerekli' },
+            { status: 400 }
+          );
+        }
+        schema = generateArticleSchema({
+          title,
+          description,
+          content: content || '',
+          author,
+          datePublished,
+          dateModified,
+          imageUrl,
+          url,
+          keywords: keywords ? (Array.isArray(keywords) ? keywords : [keywords]) : undefined,
+        });
         break;
-      case 'blogpost':
-        schema = generateBlogPostSchema(data);
-        break;
+
       case 'faq':
-        schema = generateFAQSchema(data.faqs);
+        let items: FAQItem[] = faqItems || [];
+        if (autoExtract && content) {
+          const extracted = extractFAQFromContent(content);
+          extractedData.faqItems = extracted;
+          if (extracted.length > 0 && items.length === 0) {
+            items = extracted;
+          }
+        }
+        if (items.length === 0) {
+          return NextResponse.json(
+            { error: 'En az bir soru-cevap çifti gerekli', extractedData },
+            { status: 400 }
+          );
+        }
+        schema = generateFAQSchema(items);
         break;
+
       case 'howto':
-        schema = generateHowToSchema(data);
+        let steps: HowToStep[] = howToSteps || [];
+        if (autoExtract && content) {
+          const extracted = extractHowToFromContent(content);
+          extractedData.howToSteps = extracted;
+          if (extracted.length > 0 && steps.length === 0) {
+            steps = extracted;
+          }
+        }
+        if (!title) {
+          return NextResponse.json(
+            { error: 'HowTo başlığı gerekli' },
+            { status: 400 }
+          );
+        }
+        if (steps.length === 0) {
+          return NextResponse.json(
+            { error: 'En az bir adım gerekli', extractedData },
+            { status: 400 }
+          );
+        }
+        schema = generateHowToSchema({
+          name: title,
+          description: description || '',
+          steps,
+          totalTime,
+          imageUrl,
+        });
         break;
-      case 'product':
-        schema = generateProductSchema(data);
+
+      case 'breadcrumb':
+        if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+          return NextResponse.json(
+            { error: 'Breadcrumb öğeleri gerekli' },
+            { status: 400 }
+          );
+        }
+        schema = generateBreadcrumbSchema(body.items);
         break;
+
+      case 'webpage':
+        if (!title) {
+          return NextResponse.json(
+            { error: 'Sayfa başlığı gerekli' },
+            { status: 400 }
+          );
+        }
+        schema = generateWebPageSchema({
+          title,
+          description: description || '',
+          url,
+          datePublished,
+          dateModified,
+        });
+        break;
+
+      case 'combined':
+        const schemas: object[] = [];
+        if (title && description) {
+          schemas.push(
+            generateArticleSchema({
+              title,
+              description,
+              content: content || '',
+              author,
+              datePublished,
+              dateModified,
+              imageUrl,
+              url,
+              keywords: keywords ? (Array.isArray(keywords) ? keywords : [keywords]) : undefined,
+            })
+          );
+        }
+        if (content) {
+          const faqExtracted = faqItems || extractFAQFromContent(content);
+          if (faqExtracted.length > 0) {
+            schemas.push(generateFAQSchema(faqExtracted));
+            extractedData.faqItems = faqExtracted;
+          }
+          const howtoExtracted = howToSteps || extractHowToFromContent(content);
+          if (howtoExtracted.length > 0) {
+            schemas.push(
+              generateHowToSchema({
+                name: title || 'Nasıl Yapılır',
+                description: description || '',
+                steps: howtoExtracted,
+              })
+            );
+            extractedData.howToSteps = howtoExtracted;
+          }
+        }
+        schema = schemas.length > 1 ? combineSchemas(schemas) : schemas[0] || {};
+        break;
+
       default:
         return NextResponse.json(
-          { error: 'Geçersiz şema tipi' },
+          { error: 'Geçersiz schema türü' },
           { status: 400 }
         );
     }
 
     return NextResponse.json({
       schema,
-      jsonLd: `<script type="application/ld+json">\n${JSON.stringify(schema, null, 2)}\n</script>`,
+      scriptTag: formatSchemaAsScript(schema),
+      extractedData,
     });
-  } catch (error) {
-    console.error('Generate schema error:', error);
+  } catch (error: any) {
+    console.error('Schema generation error:', error);
     return NextResponse.json(
-      { error: 'Şema oluşturma hatası' },
+      { error: error.message || 'Schema oluşturma hatası' },
       { status: 500 }
     );
   }

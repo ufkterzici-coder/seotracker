@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { CircularProgress } from '@/components/ui/Progress';
 import Modal, { ModalFooter } from '@/components/ui/Modal';
 import SEOAnalysisPanel from '@/components/seo/SEOAnalysisPanel';
+import SchemaMarkupPanel from '@/components/seo/SchemaMarkupPanel';
 
 // Dynamic import for TipTap editor (client-side only)
 const RichTextEditor = dynamic(
@@ -439,6 +440,27 @@ export default function ContentViewPage() {
               metaTitle={content.meta_title}
               metaDescription={content.meta_description}
               slug={content.slug}
+            />
+          </div>
+        )}
+
+        {/* Schema Markup Section */}
+        {!editing && content.content && (
+          <div className="mt-8">
+            <h2 className="text-xl font-bold text-white mb-4">Schema Markup</h2>
+            <SchemaMarkupPanel
+              title={content.title}
+              description={content.meta_description}
+              content={content.content}
+              datePublished={content.created_at}
+              dateModified={content.updated_at}
+              keywords={(() => {
+                try {
+                  return content.lsi_keywords ? JSON.parse(content.lsi_keywords) : undefined;
+                } catch {
+                  return undefined;
+                }
+              })()}
             />
           </div>
         )}
