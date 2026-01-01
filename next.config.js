@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['puppeteer', 'sql.js'],
+    serverComponentsExternalPackages: ['puppeteer', 'sql.js', 'groq-sdk'],
   },
   // Fallback for SWC binary issues on Windows
   swcMinify: false,
@@ -12,7 +12,7 @@ const nextConfig = {
       asyncWebAssembly: true,
     };
 
-    // Exclude sql.js from client bundle (server-only)
+    // Exclude server-only packages from client bundle
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
