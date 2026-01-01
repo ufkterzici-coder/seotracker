@@ -6,19 +6,21 @@ import { schema, defaultTemplates } from './schema';
 const dbPath = path.join(process.cwd(), 'data', 'seo-panel.db');
 
 let db: SqlJsDatabase | null = null;
-let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+let initPromise: Promise<SqlJsDatabase> | null = null;
 
-async function initSQL() {
-  if (!SQL) {
-    SQL = await initSqlJs();
-  }
-  return SQL;
-}
+async function initSQL(): Promise<SqlJsDatabase> {
+  // Locate the WASM file in node_modules
+  const wasmPath = path.join(
+    process.cwd(),
+    'node_modules',
+    'sql.js',
+    'dist',
+    'sql-wasm.wasm'
+  );
 
-export async function getDatabase(): Promise<SqlJsDatabase> {
-  if (db) return db;
-
-  const SqlJs = await initSQL();
+  const SQL = await initSqlJs({
+    locateFile: () => wasmPath,
+  });
 
   // Ensure data directory exists
   const dataDir = path.dirname(dbPath);
@@ -27,30 +29,20 @@ export async function getDatabase(): Promise<SqlJsDatabase> {
   }
 
   // Load existing database or create new one
+  let database: SqlJsDatabase;
   if (fs.existsSync(dbPath)) {
     const buffer = fs.readFileSync(dbPath);
-    db = new SqlJs.Database(buffer);
+    database = new SQL.Database(buffer);
   } else {
-    db = new SqlJs.Database();
+    database = new SQL.Database();
   }
 
   // Initialize tables
-  db.run(schema);
+  database.run(schema);
 
   // Insert default templates if not exists
-  initializeDefaultTemplates();
-
-  // Save to file
-  saveDatabase();
-
-  return db;
-}
-
-function initializeDefaultTemplates() {
-  if (!db) return;
-
   for (const template of defaultTemplates) {
-    db.run(
+    database.run(
       `INSERT OR IGNORE INTO templates (id, name, description, structure, prompts, is_default)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
@@ -63,6 +55,27 @@ function initializeDefaultTemplates() {
       ]
     );
   }
+
+  // Save to file
+  const data = database.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync(dbPath, buffer);
+
+  return database;
+}
+
+export async function getDatabase(): Promise<SqlJsDatabase> {
+  if (db) return db;
+
+  // Prevent multiple simultaneous initializations
+  if (!initPromise) {
+    initPromise = initSQL().then((database) => {
+      db = database;
+      return database;
+    });
+  }
+
+  return initPromise;
 }
 
 export function saveDatabase() {
