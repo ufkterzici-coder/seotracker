@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['sql.js', 'groq-sdk', 'jsdom'],
+    serverComponentsExternalPackages: ['sql.js', 'jsdom'],
   },
   // Fallback for SWC binary issues on Windows
   swcMinify: false,

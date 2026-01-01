@@ -1,13 +1,17 @@
-import Groq from 'groq-sdk';
+// Use fetch directly to avoid ESM module issues on Windows
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-function getGroqClient(): Groq {
+function getApiKey(): string {
   const apiKey = process.env.GROQ_API_KEY;
-
   if (!apiKey) {
     throw new Error('GROQ_API_KEY ortam değişkeni tanımlanmamış. Lütfen .env.local dosyasına ekleyin.');
   }
+  return apiKey;
+}
 
-  return new Groq({ apiKey });
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }
 
 export interface GenerateOptions {
@@ -20,9 +24,7 @@ export interface GenerateOptions {
 export async function generateWithGroq(options: GenerateOptions): Promise<string> {
   const { prompt, systemPrompt, maxTokens = 4096, temperature = 0.7 } = options;
 
-  const groq = getGroqClient();
-
-  const messages: Groq.Chat.ChatCompletionMessageParam[] = [];
+  const messages: ChatMessage[] = [];
 
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
@@ -31,21 +33,37 @@ export async function generateWithGroq(options: GenerateOptions): Promise<string
   messages.push({ role: 'user', content: prompt });
 
   try {
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages,
-      max_tokens: maxTokens,
-      temperature,
+    const response = await fetch(GROQ_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${getApiKey()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+      }),
     });
 
-    return response.choices[0]?.message?.content || '';
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        throw new Error('Geçersiz GROQ API anahtarı. Lütfen .env.local dosyasındaki GROQ_API_KEY değerini kontrol edin.');
+      }
+      if (response.status === 429) {
+        throw new Error('API istek limiti aşıldı. Lütfen birkaç dakika bekleyip tekrar deneyin.');
+      }
+      throw new Error(errorData.error?.message || `API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
   } catch (error: any) {
     console.error('Groq API error:', error);
-    if (error.status === 401) {
-      throw new Error('Geçersiz GROQ API anahtarı. Lütfen .env.local dosyasındaki GROQ_API_KEY değerini kontrol edin.');
-    }
-    if (error.status === 429) {
-      throw new Error('API istek limiti aşıldı. Lütfen birkaç dakika bekleyip tekrar deneyin.');
+    if (error.message.includes('GROQ_API_KEY') || error.message.includes('API')) {
+      throw error;
     }
     throw new Error(`AI içerik oluşturma hatası: ${error.message || 'Bilinmeyen hata'}`);
   }

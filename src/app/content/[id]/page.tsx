@@ -15,6 +15,7 @@ import { CircularProgress } from '@/components/ui/Progress';
 import Modal, { ModalFooter } from '@/components/ui/Modal';
 import SEOAnalysisPanel from '@/components/seo/SEOAnalysisPanel';
 import SchemaMarkupPanel from '@/components/seo/SchemaMarkupPanel';
+import ImageSuggestionsPanel from '@/components/seo/ImageSuggestionsPanel';
 
 // Dynamic import for TipTap editor (client-side only)
 const RichTextEditor = dynamic(
@@ -461,6 +462,18 @@ export default function ContentViewPage() {
                   return undefined;
                 }
               })()}
+            />
+          </div>
+        )}
+
+        {/* Image Suggestions Section */}
+        {!editing && content.content && (
+          <div className="mt-8">
+            <h2 className="text-xl font-bold text-white mb-4">Görsel Önerileri</h2>
+            <ImageSuggestionsPanel
+              title={content.title}
+              content={content.content}
+              mainKeyword={content.main_keyword}
             />
           </div>
         )}
