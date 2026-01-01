@@ -1,37 +1,28 @@
-import puppeteer from 'puppeteer';
 import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import { cleanContent } from './cleaner';
 import type { ScrapedPage, HeadingItem, ImageItem } from '@/types/scraper';
 
+// Fetch-based scraper that works on all platforms (no Puppeteer required)
 export async function scrapePage(url: string): Promise<ScrapedPage> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
-
   try {
-    const page = await browser.newPage();
-
-    // Set user agent to avoid blocking
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
-
-    // Set viewport
-    await page.setViewport({ width: 1920, height: 1080 });
-
-    // Navigate with timeout
-    await page.goto(url, {
-      waitUntil: 'networkidle0',
-      timeout: 30000,
+    // Fetch the page
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+      // @ts-ignore - Next.js fetch supports this
+      next: { revalidate: 0 },
     });
 
-    // Wait a bit for dynamic content
-    await page.waitForTimeout(1000);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-    // Get page HTML
-    const html = await page.content();
+    const html = await response.text();
 
     // Parse with JSDOM and Readability
     const dom = new JSDOM(html, { url });
@@ -39,7 +30,20 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
     const article = reader.parse();
 
     if (!article) {
-      throw new Error('Could not extract content from page');
+      // Fallback to basic extraction if Readability fails
+      const doc = dom.window.document;
+      const title = doc.querySelector('title')?.textContent || '';
+      const bodyText = doc.body?.textContent || '';
+      const cleanedContent = cleanContent(bodyText);
+
+      return {
+        url,
+        title,
+        content: cleanedContent,
+        headings: extractHeadings(doc),
+        wordCount: cleanedContent.split(/\s+/).filter((w) => w.length > 0).length,
+        images: extractImages(doc),
+      };
     }
 
     // Extract headings
@@ -59,8 +63,9 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
       wordCount: cleanedContent.split(/\s+/).filter((w) => w.length > 0).length,
       images,
     };
-  } finally {
-    await browser.close();
+  } catch (error) {
+    console.error(`Failed to scrape ${url}:`, error);
+    throw error;
   }
 }
 
@@ -100,9 +105,18 @@ export async function scrapeMultiplePages(urls: string[]): Promise<ScrapedPage[]
       const result = await scrapePage(url);
       results.push(result);
       // Add delay between requests to be polite
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     } catch (error) {
       console.error(`Failed to scrape ${url}:`, error);
+      // Add a placeholder for failed scrapes
+      results.push({
+        url,
+        title: 'Taranamadı',
+        content: '',
+        headings: [],
+        wordCount: 0,
+        images: [],
+      });
     }
   }
 
@@ -114,7 +128,6 @@ export async function scrapePageLight(url: string): Promise<{
   description: string;
   headings: HeadingItem[];
 }> {
-  // Light scraping without full page render - using fetch
   try {
     const response = await fetch(url, {
       headers: {
