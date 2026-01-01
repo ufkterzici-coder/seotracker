@@ -72,51 +72,60 @@ export async function generateWithGroq(options: GenerateOptions): Promise<string
 export async function generateSEOContent(params: {
   topic: string;
   mainKeyword: string;
+  secondaryKeywords?: string[];
   competitorContents: string[];
   wordCount: number;
   searchIntent: string;
   language?: string;
 }) {
-  const systemPrompt = `You are a professional SEO content writer. Your task is to create high-quality, SEO-optimized content in Turkish language.
+  const keywordsList = params.secondaryKeywords?.length
+    ? `Main Keyword: ${params.mainKeyword}\nSecondary Keywords: ${params.secondaryKeywords.join(', ')}`
+    : `Main Keyword: ${params.mainKeyword}`;
 
-Rules:
-1. Content must be 100% original - never copy from competitors
-2. Naturally incorporate the main keyword (density: 1-2%)
-3. Maintain proper H1, H2, H3 heading hierarchy
-4. Optimize for featured snippets
-5. Include LSI (semantically related) keywords
-6. Write approximately ${params.wordCount} words
-7. Use professional but engaging tone
-8. Follow Turkish grammar rules perfectly`;
+  const systemPrompt = `Sen profesyonel bir SEO içerik yazarısın. Görevin Türkçe dilinde yüksek kaliteli, SEO uyumlu içerik oluşturmak.
 
-  const competitorContext = params.competitorContents
-    .map((c, i) => `--- Competitor ${i + 1} ---\n${c.substring(0, 2000)}`)
-    .join('\n\n');
+Kurallar:
+1. İçerik %100 özgün olmalı - rakiplerden kopyalama
+2. Ana anahtar kelimeyi doğal şekilde kullan (yoğunluk: %1-2)
+3. İkincil anahtar kelimeleri de içerikte kullan
+4. Düzgün H1, H2, H3 başlık hiyerarşisi kullan
+5. Featured snippet için optimize et
+6. LSI (semantik olarak ilişkili) anahtar kelimeler ekle
+7. Yaklaşık ${params.wordCount} kelime yaz
+8. Profesyonel ama ilgi çekici ton kullan
+9. Türkçe dilbilgisi kurallarına uy
+10. SADECE JSON formatında yanıt ver, başka açıklama ekleme`;
 
-  const prompt = `Topic: ${params.topic}
-Main Keyword: ${params.mainKeyword}
-Search Intent: ${params.searchIntent}
-Target Word Count: ${params.wordCount}
+  const competitorContext = params.competitorContents.length > 0
+    ? params.competitorContents
+        .map((c, i) => `--- Rakip ${i + 1} ---\n${c.substring(0, 1500)}`)
+        .join('\n\n')
+    : 'Rakip içerik yok';
 
-Competitor Contents (for reference only - DO NOT COPY):
+  const prompt = `Konu: ${params.topic}
+${keywordsList}
+Arama Niyeti: ${params.searchIntent}
+Hedef Kelime Sayısı: ${params.wordCount}
+
+Rakip İçerikler (sadece referans için - KOPYALAMA):
 ${competitorContext}
 
-Please generate content in the following JSON format:
+Aşağıdaki JSON formatında içerik oluştur (SADECE JSON döndür, başka bir şey yazma):
 {
   "meta": {
-    "title": "SEO title (max 60 chars)",
-    "description": "Meta description (max 155 chars)",
-    "slug": "url-friendly-slug"
+    "title": "SEO başlığı (max 60 karakter, ana anahtar kelimeyi içermeli)",
+    "description": "Meta açıklama (max 155 karakter, dikkat çekici ve anahtar kelime içeren)",
+    "slug": "url-uyumlu-slug"
   },
   "headings": {
-    "h1": "Main heading",
-    "h2": ["Subheading 1", "Subheading 2", ...],
-    "h3": ["Sub-subheading 1", ...]
+    "h1": "Ana başlık",
+    "h2": ["Alt başlık 1", "Alt başlık 2"],
+    "h3": ["Alt-alt başlık 1"]
   },
-  "content": "Full article content in Markdown format",
-  "lsiKeywords": ["keyword1", "keyword2", ...],
-  "featuredSnippet": "Optimized paragraph for position zero",
-  "imageAltSuggestions": ["alt text 1", "alt text 2", ...]
+  "content": "Markdown formatında tam makale içeriği...",
+  "lsiKeywords": ["ilişkili kelime 1", "ilişkili kelime 2", "ilişkili kelime 3", "ilişkili kelime 4", "ilişkili kelime 5"],
+  "featuredSnippet": "Google sıfır pozisyonu için optimize edilmiş paragraf",
+  "imageAltSuggestions": ["görsel alt text 1", "görsel alt text 2"]
 }`;
 
   const response = await generateWithGroq({
@@ -126,17 +135,56 @@ Please generate content in the following JSON format:
     temperature: 0.7,
   });
 
-  // Parse JSON response
+  console.log('Raw AI response:', response.substring(0, 500));
+
+  // Parse JSON response - try multiple methods
   try {
+    // Method 1: Direct JSON parse
+    const cleaned = response.trim();
+    if (cleaned.startsWith('{')) {
+      try {
+        return JSON.parse(cleaned);
+      } catch {}
+    }
+
+    // Method 2: Extract JSON from markdown code block
+    const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      try {
+        return JSON.parse(codeBlockMatch[1].trim());
+      } catch {}
+    }
+
+    // Method 3: Find JSON object in response
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {}
     }
+
+    console.error('Failed to parse AI response as JSON');
   } catch (e) {
     console.error('Failed to parse AI response:', e);
   }
 
-  return { raw: response };
+  // Return raw response with default structure if parsing fails
+  return {
+    meta: {
+      title: params.topic.substring(0, 60),
+      description: `${params.topic} hakkında kapsamlı rehber. ${params.mainKeyword} ile ilgili bilmeniz gereken her şey.`.substring(0, 155),
+      slug: params.topic.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 50),
+    },
+    headings: {
+      h1: params.topic,
+      h2: [],
+      h3: [],
+    },
+    content: response,
+    lsiKeywords: [params.mainKeyword],
+    featuredSnippet: '',
+    imageAltSuggestions: [],
+  };
 }
 
 export async function generateMetaTags(params: {
@@ -225,6 +273,90 @@ Return the improved content in Markdown format.`;
   });
 
   return response;
+}
+
+export interface SEOIssue {
+  type: 'error' | 'warning' | 'info';
+  category: string;
+  message: string;
+  suggestion: string;
+}
+
+export async function fixSEOIssues(params: {
+  content: string;
+  title: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  mainKeyword: string;
+  issues: SEOIssue[];
+}) {
+  const issuesList = params.issues
+    .map((issue, i) => `${i + 1}. [${issue.category}] ${issue.message} - Öneri: ${issue.suggestion}`)
+    .join('\n');
+
+  const systemPrompt = `Sen bir SEO uzmanısın. Verilen içeriği SEO sorunlarını düzelterek optimize et.
+Kurallar:
+1. İçeriğin anlamını koru
+2. Türkçe dilbilgisine uy
+3. Ana anahtar kelimeyi doğal kullan (%1-2 yoğunluk)
+4. Başlık yapısını düzelt (H1, H2, H3)
+5. Meta bilgilerini optimize et
+6. SADECE JSON döndür`;
+
+  const prompt = `Mevcut İçerik:
+${params.content.substring(0, 3000)}
+
+Başlık: ${params.title}
+Meta Başlık: ${params.metaTitle || 'Yok'}
+Meta Açıklama: ${params.metaDescription || 'Yok'}
+Ana Anahtar Kelime: ${params.mainKeyword}
+
+Tespit Edilen SEO Sorunları:
+${issuesList}
+
+Bu sorunları düzelterek içeriği yeniden oluştur. JSON formatında döndür:
+{
+  "meta": {
+    "title": "Optimize edilmiş SEO başlığı (max 60 karakter)",
+    "description": "Optimize edilmiş meta açıklama (max 155 karakter)",
+    "slug": "optimize-edilmis-slug"
+  },
+  "content": "SEO optimize edilmiş tam içerik...",
+  "headings": {
+    "h1": "Ana başlık",
+    "h2": ["Alt başlık 1", "Alt başlık 2"],
+    "h3": []
+  },
+  "fixedIssues": ["Düzeltilen sorun 1", "Düzeltilen sorun 2"]
+}`;
+
+  const response = await generateWithGroq({
+    prompt,
+    systemPrompt,
+    maxTokens: 4096,
+    temperature: 0.5,
+  });
+
+  try {
+    const cleaned = response.trim();
+    if (cleaned.startsWith('{')) {
+      return JSON.parse(cleaned);
+    }
+
+    const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      return JSON.parse(codeBlockMatch[1].trim());
+    }
+
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (e) {
+    console.error('Failed to parse SEO fix response:', e);
+  }
+
+  return null;
 }
 
 export async function generateOutline(params: { topic: string; mainKeyword: string }) {

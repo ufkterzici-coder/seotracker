@@ -35,6 +35,7 @@ export default function NewContentPage() {
   // Form state
   const [title, setTitle] = useState('');
   const [mainKeyword, setMainKeyword] = useState('');
+  const [secondaryKeywords, setSecondaryKeywords] = useState<string[]>([]);
   const [competitorUrls, setCompetitorUrls] = useState('');
   const [wordCount, setWordCount] = useState(1500);
   const [searchIntent, setSearchIntent] = useState('informational');
@@ -89,12 +90,26 @@ export default function NewContentPage() {
     }
   };
 
-  const selectKeyword = (keyword: string, intent?: string) => {
-    setMainKeyword(keyword);
-    if (intent) {
-      setSearchIntent(intent);
+  const selectKeyword = (keyword: string, intent?: string, asMain = true) => {
+    if (asMain) {
+      setMainKeyword(keyword);
+      if (intent) {
+        setSearchIntent(intent);
+      }
     }
     setShowSuggestions(false);
+  };
+
+  const toggleSecondaryKeyword = (keyword: string) => {
+    setSecondaryKeywords((prev) =>
+      prev.includes(keyword)
+        ? prev.filter((k) => k !== keyword)
+        : [...prev, keyword]
+    );
+  };
+
+  const removeSecondaryKeyword = (keyword: string) => {
+    setSecondaryKeywords((prev) => prev.filter((k) => k !== keyword));
   };
 
   const handleScrape = async () => {
@@ -141,6 +156,7 @@ export default function NewContentPage() {
         body: JSON.stringify({
           topic: title,
           mainKeyword,
+          secondaryKeywords,
           competitorContents: scrapedContent.map((c) => c.content).filter(Boolean),
           wordCount,
           searchIntent,
@@ -172,6 +188,11 @@ export default function NewContentPage() {
     setError(null);
 
     try {
+      const allKeywords = [
+        ...(generatedContent?.lsiKeywords || []),
+        ...secondaryKeywords,
+      ].filter((v, i, a) => a.indexOf(v) === i); // Remove duplicates
+
       const response = await fetch('/api/content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -182,7 +203,7 @@ export default function NewContentPage() {
           meta_description: generatedContent?.meta?.description,
           content: generatedContent?.content,
           main_keyword: mainKeyword,
-          lsi_keywords: JSON.stringify(generatedContent?.lsiKeywords || []),
+          lsi_keywords: JSON.stringify(allKeywords),
           search_intent: searchIntent,
           headings: JSON.stringify(generatedContent?.headings || {}),
           word_count: generatedContent?.content?.split(/\s+/).length || 0,
@@ -300,7 +321,7 @@ export default function NewContentPage() {
 
                   {/* Keyword Suggestions Dropdown */}
                   {showSuggestions && keywordSuggestions && (
-                    <div className="absolute z-10 w-full mt-2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-80 overflow-y-auto">
+                    <div className="absolute z-10 w-full mt-2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-96 overflow-y-auto">
                       <div className="p-3 border-b border-slate-700">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium text-slate-300">Önerilen Anahtar Kelimeler</span>
@@ -313,6 +334,7 @@ export default function NewContentPage() {
                             </svg>
                           </button>
                         </div>
+                        <p className="text-xs text-slate-500 mt-1">Tıklayarak ana kelime seçin, checkbox ile ikincil kelime ekleyin</p>
                       </div>
 
                       {/* Main Keyword */}
@@ -330,18 +352,25 @@ export default function NewContentPage() {
                       {/* Related Keywords */}
                       {keywordSuggestions.relatedKeywords?.length > 0 && (
                         <div className="p-2 border-t border-slate-700">
-                          <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">İlişkili Kelimeler</p>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">İlişkili Kelimeler (İkincil için checkbox)</p>
                           {keywordSuggestions.relatedKeywords.map((kw, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => selectKeyword(kw.keyword, kw.intent)}
-                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-between"
-                            >
-                              <span className="text-slate-300">{kw.keyword}</span>
-                              <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
-                                {intentLabels[kw.intent] || kw.intent}
-                              </span>
-                            </button>
+                            <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={secondaryKeywords.includes(kw.keyword)}
+                                onChange={() => toggleSecondaryKeyword(kw.keyword)}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500"
+                              />
+                              <button
+                                onClick={() => selectKeyword(kw.keyword, kw.intent)}
+                                className="flex-1 text-left flex items-center justify-between"
+                              >
+                                <span className="text-slate-300">{kw.keyword}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
+                                  {intentLabels[kw.intent] || kw.intent}
+                                </span>
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -351,22 +380,56 @@ export default function NewContentPage() {
                         <div className="p-2 border-t border-slate-700">
                           <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">Uzun Kuyruk Kelimeler</p>
                           {keywordSuggestions.longTailKeywords.map((kw, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => selectKeyword(kw.keyword, kw.intent)}
-                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-between"
-                            >
-                              <span className="text-slate-300 text-sm">{kw.keyword}</span>
-                              <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
-                                {intentLabels[kw.intent] || kw.intent}
-                              </span>
-                            </button>
+                            <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={secondaryKeywords.includes(kw.keyword)}
+                                onChange={() => toggleSecondaryKeyword(kw.keyword)}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500"
+                              />
+                              <button
+                                onClick={() => selectKeyword(kw.keyword, kw.intent)}
+                                className="flex-1 text-left flex items-center justify-between"
+                              >
+                                <span className="text-slate-300 text-sm">{kw.keyword}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
+                                  {intentLabels[kw.intent] || kw.intent}
+                                </span>
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
+
+                {/* Selected Secondary Keywords */}
+                {secondaryKeywords.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Seçili İkincil Anahtar Kelimeler ({secondaryKeywords.length})
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {secondaryKeywords.map((kw, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm"
+                        >
+                          {kw}
+                          <button
+                            onClick={() => removeSecondaryKeyword(kw)}
+                            className="hover:text-emerald-300"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <Textarea
                   label="Rakip URL'ler (Her satıra bir URL - opsiyonel)"
@@ -518,6 +581,13 @@ export default function NewContentPage() {
                     metaDescription={generatedContent.meta?.description}
                     slug={generatedContent.meta?.slug}
                     autoAnalyze={true}
+                    onContentFixed={(fixedContent) => {
+                      setGeneratedContent((prev: any) => ({
+                        ...prev,
+                        content: fixedContent.content,
+                        meta: fixedContent.meta,
+                      }));
+                    }}
                   />
                 </TabsContent>
               </Tabs>

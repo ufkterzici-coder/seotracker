@@ -79,6 +79,11 @@ interface SEOAnalysisPanelProps {
   metaDescription?: string;
   slug?: string;
   autoAnalyze?: boolean;
+  onContentFixed?: (fixedContent: {
+    content: string;
+    meta: { title: string; description: string; slug: string };
+    fixedIssues: string[];
+  }) => void;
 }
 
 export default function SEOAnalysisPanel({
@@ -89,10 +94,13 @@ export default function SEOAnalysisPanel({
   metaDescription,
   slug,
   autoAnalyze = false,
+  onContentFixed,
 }: SEOAnalysisPanelProps) {
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fixing, setFixing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fixResult, setFixResult] = useState<{ fixedIssues: string[] } | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'keywords' | 'readability' | 'issues'>('overview');
 
   const runAnalysis = async () => {
@@ -142,6 +150,49 @@ export default function SEOAnalysisPanel({
       runAnalysis();
     }
   }, [autoAnalyze]);
+
+  const handleFixIssues = async () => {
+    if (!analysis || analysis.seoScore.issues.length === 0) return;
+
+    setFixing(true);
+    setError(null);
+    setFixResult(null);
+
+    try {
+      const response = await fetch('/api/fix/seo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          title,
+          metaTitle,
+          metaDescription,
+          mainKeyword,
+          issues: analysis.seoScore.issues,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+      } else if (data.result) {
+        setFixResult({ fixedIssues: data.result.fixedIssues || [] });
+
+        if (onContentFixed) {
+          onContentFixed({
+            content: data.result.content,
+            meta: data.result.meta,
+            fixedIssues: data.result.fixedIssues || [],
+          });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'SEO düzeltme hatası');
+    } finally {
+      setFixing(false);
+    }
+  };
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-emerald-400';
@@ -542,6 +593,55 @@ export default function SEOAnalysisPanel({
                   </div>
                 </div>
               ))}
+
+              {/* Fix Result */}
+              {fixResult && fixResult.fixedIssues.length > 0 && (
+                <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                  <h4 className="text-sm font-medium text-emerald-400 mb-2">Düzeltilen Sorunlar</h4>
+                  <ul className="text-sm text-slate-300 space-y-1">
+                    {fixResult.fixedIssues.map((issue, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        {issue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Fix Button */}
+              {onContentFixed && (
+                <div className="mt-4 pt-4 border-t border-slate-700">
+                  <Button
+                    onClick={handleFixIssues}
+                    loading={fixing}
+                    className="w-full"
+                    disabled={fixing}
+                  >
+                    {fixing ? (
+                      <>
+                        <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        AI ile Düzeltiliyor...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        AI ile Sorunları Düzelt ({analysis.seoScore.issues.length} sorun)
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-slate-500 mt-2 text-center">
+                    AI, tespit edilen SEO sorunlarını otomatik olarak düzeltir
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </Card>

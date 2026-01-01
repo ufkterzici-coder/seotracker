@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
     const {
       topic,
       mainKeyword,
+      secondaryKeywords = [],
       competitorContents = [],
       wordCount = 1500,
       searchIntent = 'informational',
@@ -26,20 +27,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('Generating content for:', { topic, mainKeyword, secondaryKeywords });
+
     const result = await generateSEOContent({
       topic,
       mainKeyword,
+      secondaryKeywords,
       competitorContents,
       wordCount,
       searchIntent,
       language,
     });
 
+    console.log('Generated result meta:', result?.meta);
+
     return NextResponse.json({ result });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Generate content error:', error);
     return NextResponse.json(
-      { error: 'İçerik oluşturma hatası' },
+      { error: error.message || 'İçerik oluşturma hatası' },
       { status: 500 }
     );
   }
