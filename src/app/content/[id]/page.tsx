@@ -441,6 +441,41 @@ export default function ContentViewPage() {
               metaTitle={content.meta_title}
               metaDescription={content.meta_description}
               slug={content.slug}
+              onContentFixed={async (fixedContent) => {
+                // Apply fixed content and save
+                setContent((prev: any) => ({
+                  ...prev,
+                  content: fixedContent.content,
+                  html_content: fixedContent.content,
+                  meta_title: fixedContent.meta.title,
+                  meta_description: fixedContent.meta.description,
+                  slug: fixedContent.meta.slug,
+                }));
+                setEditContent(fixedContent.content);
+                setEditMetaTitle(fixedContent.meta.title);
+                setEditMetaDesc(fixedContent.meta.description);
+
+                // Auto-save the fixed content
+                try {
+                  const plainText = fixedContent.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                  const wordCount = plainText.split(/\s+/).filter(Boolean).length;
+
+                  await fetch(`/api/content?id=${params.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      content: fixedContent.content,
+                      html_content: fixedContent.content,
+                      meta_title: fixedContent.meta.title,
+                      meta_description: fixedContent.meta.description,
+                      slug: fixedContent.meta.slug,
+                      word_count: wordCount,
+                    }),
+                  });
+                } catch (error) {
+                  console.error('Auto-save error:', error);
+                }
+              }}
             />
           </div>
         )}

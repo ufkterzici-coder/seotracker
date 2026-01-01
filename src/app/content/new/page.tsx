@@ -34,7 +34,7 @@ export default function NewContentPage() {
 
   // Form state
   const [title, setTitle] = useState('');
-  const [mainKeyword, setMainKeyword] = useState('');
+  const [mainKeywords, setMainKeywords] = useState<string[]>([]);
   const [secondaryKeywords, setSecondaryKeywords] = useState<string[]>([]);
   const [competitorUrls, setCompetitorUrls] = useState('');
   const [wordCount, setWordCount] = useState(1500);
@@ -79,8 +79,8 @@ export default function NewContentPage() {
         setShowSuggestions(true);
 
         // Auto-fill main keyword if empty
-        if (!mainKeyword && data.keywords.mainKeyword) {
-          setMainKeyword(data.keywords.mainKeyword);
+        if (mainKeywords.length === 0 && data.keywords.mainKeyword) {
+          setMainKeywords([data.keywords.mainKeyword]);
         }
       }
     } catch (err) {
@@ -90,12 +90,28 @@ export default function NewContentPage() {
     }
   };
 
+  const toggleMainKeyword = (keyword: string, intent?: string) => {
+    setMainKeywords((prev) => {
+      if (prev.includes(keyword)) {
+        return prev.filter((k) => k !== keyword);
+      }
+      if (prev.length >= 3) {
+        return prev; // Max 3 main keywords
+      }
+      return [...prev, keyword];
+    });
+    if (intent) {
+      setSearchIntent(intent);
+    }
+  };
+
+  const removeMainKeyword = (keyword: string) => {
+    setMainKeywords((prev) => prev.filter((k) => k !== keyword));
+  };
+
   const selectKeyword = (keyword: string, intent?: string, asMain = true) => {
     if (asMain) {
-      setMainKeyword(keyword);
-      if (intent) {
-        setSearchIntent(intent);
-      }
+      toggleMainKeyword(keyword, intent);
     }
     setShowSuggestions(false);
   };
@@ -155,8 +171,8 @@ export default function NewContentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: title,
-          mainKeyword,
-          secondaryKeywords,
+          mainKeyword: mainKeywords[0] || '',
+          secondaryKeywords: [...mainKeywords.slice(1), ...secondaryKeywords],
           competitorContents: scrapedContent.map((c) => c.content).filter(Boolean),
           wordCount,
           searchIntent,
@@ -202,7 +218,7 @@ export default function NewContentPage() {
           meta_title: generatedContent?.meta?.title,
           meta_description: generatedContent?.meta?.description,
           content: generatedContent?.content,
-          main_keyword: mainKeyword,
+          main_keyword: mainKeywords.join(', '),
           lsi_keywords: JSON.stringify(allKeywords),
           search_intent: searchIntent,
           headings: JSON.stringify(generatedContent?.headings || {}),
@@ -310,13 +326,40 @@ export default function NewContentPage() {
                   )}
                 </div>
 
+                {/* Selected Main Keywords Display */}
+                {mainKeywords.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Seçili Ana Anahtar Kelimeler ({mainKeywords.length}/3)
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {mainKeywords.map((kw, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-sm font-medium"
+                        >
+                          {idx === 0 && <span className="text-xs bg-blue-500/30 px-1 rounded mr-1">Ana</span>}
+                          {kw}
+                          <button
+                            onClick={() => removeMainKeyword(kw)}
+                            className="hover:text-blue-300 ml-1"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="relative">
                   <Input
-                    label="Ana Anahtar Kelime"
-                    placeholder="Örn: seo araçları"
-                    value={mainKeyword}
-                    onChange={(e) => setMainKeyword(e.target.value)}
+                    label={`Ana Anahtar Kelimeler (${mainKeywords.length}/3 seçili)`}
+                    placeholder="Örn: seo araçları (max 3 adet seçebilirsiniz)"
                     onFocus={() => keywordSuggestions && setShowSuggestions(true)}
+                    readOnly
                   />
 
                   {/* Keyword Suggestions Dropdown */}
@@ -339,39 +382,48 @@ export default function NewContentPage() {
 
                       {/* Main Keyword */}
                       <div className="p-2">
-                        <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">Ana Anahtar Kelime</p>
-                        <button
-                          onClick={() => selectKeyword(keywordSuggestions.mainKeyword)}
-                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors flex items-center justify-between group"
-                        >
-                          <span className="text-white font-medium">{keywordSuggestions.mainKeyword}</span>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">Önerilen Ana Kelime (max 3 seçebilirsiniz)</p>
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={mainKeywords.includes(keywordSuggestions.mainKeyword)}
+                            onChange={() => toggleMainKeyword(keywordSuggestions.mainKeyword)}
+                            disabled={!mainKeywords.includes(keywordSuggestions.mainKeyword) && mainKeywords.length >= 3}
+                            className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                          />
+                          <span className="text-white font-medium flex-1">{keywordSuggestions.mainKeyword}</span>
                           <Badge size="sm" className="bg-emerald-500/20 text-emerald-400">Önerilen</Badge>
-                        </button>
+                        </div>
                       </div>
 
                       {/* Related Keywords */}
                       {keywordSuggestions.relatedKeywords?.length > 0 && (
                         <div className="p-2 border-t border-slate-700">
-                          <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">İlişkili Kelimeler (İkincil için checkbox)</p>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider px-2 mb-1">İlişkili Kelimeler (Ana veya İkincil olarak seçin)</p>
                           {keywordSuggestions.relatedKeywords.map((kw, idx) => (
                             <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={mainKeywords.includes(kw.keyword)}
+                                onChange={() => toggleMainKeyword(kw.keyword, kw.intent)}
+                                disabled={!mainKeywords.includes(kw.keyword) && mainKeywords.length >= 3}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                                title="Ana kelime olarak ekle"
+                              />
                               <input
                                 type="checkbox"
                                 checked={secondaryKeywords.includes(kw.keyword)}
                                 onChange={() => toggleSecondaryKeyword(kw.keyword)}
                                 className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500"
+                                title="İkincil kelime olarak ekle"
                               />
-                              <button
-                                onClick={() => selectKeyword(kw.keyword, kw.intent)}
-                                className="flex-1 text-left flex items-center justify-between"
-                              >
-                                <span className="text-slate-300">{kw.keyword}</span>
-                                <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
-                                  {intentLabels[kw.intent] || kw.intent}
-                                </span>
-                              </button>
+                              <span className="text-slate-300 flex-1">{kw.keyword}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
+                                {intentLabels[kw.intent] || kw.intent}
+                              </span>
                             </div>
                           ))}
+                          <p className="text-xs text-slate-600 px-2 mt-1">Mavi = Ana, Yeşil = İkincil</p>
                         </div>
                       )}
 
@@ -383,19 +435,23 @@ export default function NewContentPage() {
                             <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors">
                               <input
                                 type="checkbox"
+                                checked={mainKeywords.includes(kw.keyword)}
+                                onChange={() => toggleMainKeyword(kw.keyword, kw.intent)}
+                                disabled={!mainKeywords.includes(kw.keyword) && mainKeywords.length >= 3}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                                title="Ana kelime olarak ekle"
+                              />
+                              <input
+                                type="checkbox"
                                 checked={secondaryKeywords.includes(kw.keyword)}
                                 onChange={() => toggleSecondaryKeyword(kw.keyword)}
                                 className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500"
+                                title="İkincil kelime olarak ekle"
                               />
-                              <button
-                                onClick={() => selectKeyword(kw.keyword, kw.intent)}
-                                className="flex-1 text-left flex items-center justify-between"
-                              >
-                                <span className="text-slate-300 text-sm">{kw.keyword}</span>
-                                <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
-                                  {intentLabels[kw.intent] || kw.intent}
-                                </span>
-                              </button>
+                              <span className="text-slate-300 text-sm flex-1">{kw.keyword}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${intentColors[kw.intent] || 'bg-slate-600 text-slate-300'}`}>
+                                {intentLabels[kw.intent] || kw.intent}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -468,7 +524,7 @@ export default function NewContentPage() {
                   <Button
                     onClick={handleScrape}
                     loading={scraping}
-                    disabled={!title || !mainKeyword}
+                    disabled={!title || mainKeywords.length === 0}
                   >
                     {competitorUrls.trim() ? 'Rakipleri Tara ve Devam Et' : 'Devam Et'}
                   </Button>
@@ -519,13 +575,53 @@ export default function NewContentPage() {
           {/* Step 3: Generated Content */}
           {step === 3 && generatedContent && (
             <Card title="Adım 3: Oluşturulan İçerik" description="İçeriği inceleyin ve kaydedin">
-              <Tabs defaultValue="content">
+              <Tabs defaultValue="preview">
                 <TabsList>
-                  <TabsTrigger value="content">İçerik</TabsTrigger>
+                  <TabsTrigger value="preview">Önizleme</TabsTrigger>
+                  <TabsTrigger value="content">Kaynak Kod</TabsTrigger>
                   <TabsTrigger value="meta">Meta Bilgileri</TabsTrigger>
                   <TabsTrigger value="keywords">Anahtar Kelimeler</TabsTrigger>
                   <TabsTrigger value="seo">SEO Analizi</TabsTrigger>
                 </TabsList>
+
+                <TabsContent value="preview">
+                  <div className="bg-white rounded-lg p-6 overflow-auto max-h-[600px]">
+                    <article className="prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-a:text-blue-600 prose-strong:text-slate-900 prose-li:text-slate-700">
+                      <h1 className="text-2xl font-bold text-slate-900 mb-4 border-b pb-2">
+                        {generatedContent.headings?.h1 || generatedContent.meta?.title || title}
+                      </h1>
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: (generatedContent.content || generatedContent.raw || '')
+                            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                            .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
+                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                            .replace(/^\* (.*$)/gim, '<li>$1</li>')
+                            .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
+                            .replace(/\n\n/g, '</p><p>')
+                            .replace(/\n/g, '<br>')
+                        }}
+                      />
+                    </article>
+                  </div>
+                  <div className="mt-4 p-3 bg-slate-800/50 rounded-lg flex items-center justify-between">
+                    <span className="text-sm text-slate-400">
+                      Bu önizleme, içeriğin yayınlandığında nasıl görüneceğini gösterir
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedContent.content || generatedContent.raw || '');
+                      }}
+                    >
+                      İçeriği Kopyala
+                    </Button>
+                  </div>
+                </TabsContent>
 
                 <TabsContent value="content">
                   <div className="prose prose-invert max-w-none">
@@ -533,9 +629,9 @@ export default function NewContentPage() {
                       <h1 className="text-xl font-bold text-white mb-4">
                         {generatedContent.headings?.h1 || generatedContent.meta?.title || title}
                       </h1>
-                      <div className="text-slate-300 whitespace-pre-wrap">
+                      <pre className="text-slate-300 whitespace-pre-wrap text-sm font-mono overflow-auto max-h-[500px]">
                         {generatedContent.content || generatedContent.raw || 'İçerik oluşturuldu'}
-                      </div>
+                      </pre>
                     </div>
                   </div>
                 </TabsContent>
@@ -576,7 +672,7 @@ export default function NewContentPage() {
                   <SEOAnalysisPanel
                     title={generatedContent.meta?.title || title}
                     content={generatedContent.content || generatedContent.raw || ''}
-                    mainKeyword={mainKeyword}
+                    mainKeyword={mainKeywords[0] || ''}
                     metaTitle={generatedContent.meta?.title}
                     metaDescription={generatedContent.meta?.description}
                     slug={generatedContent.meta?.slug}
